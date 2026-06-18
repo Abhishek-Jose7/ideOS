@@ -34,5 +34,17 @@
     "next_steps": "[]",
     "source": "git_hook",
     "created_at": "2026-06-18T21:48:19.546Z"
+  },
+  {
+    "id": "bf5b04a3-7324-489b-83ba-4f42e09d0ca6",
+    "feature_id": "unclassified-work",
+    "worker_id": null,
+    "summary": "lol",
+    "progress": 0,
+    "files_touched": "[\".antigravity/mcp.json\",\".antigravity/rules.md\",\".claude/CLAUDE.md\",\".claude/mcp.json\",\".cline/mcp.json\",\".cline/rules.md\",\".continue/mcpServers.json\",\".continue/rules.md\",\".env.example\",\".gitignore\",\".roo/mcp.json\",\".roo/rules.md\"]",
+    "blockers": "[]",
+    "next_steps": "[]",
+    "source": "git_hook",
+    "created_at": "2026-06-18T22:08:23.067Z"
   }
 ]
