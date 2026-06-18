@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "scar-cloud",
+  "main": "cloud/worker.js",
+  "compatibility_date": "2026-06-18",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "scar-cloud",
+      "database_id": "replace-with-wrangler-d1-create-id",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "vars": {
+    "SCAR_GROQ_MODEL": "llama-3.3-70b-versatile"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

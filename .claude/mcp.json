@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "scar": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "scar-mcp"
+      ],
+      "env": {
+        "SCAR_WORKSPACE": "${workspaceFolder}/.scar"
+      }
+    }
+  }
+}

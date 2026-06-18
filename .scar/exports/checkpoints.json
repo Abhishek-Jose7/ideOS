@@ -10,5 +10,29 @@
     "next_steps": "[\"Refresh token rotation\",\"Auth tests\"]",
     "source": "manual",
     "created_at": "2026-06-18T21:10:56.408Z"
+  },
+  {
+    "id": "a979bd59-175d-4d4e-8eba-1a135a70960b",
+    "feature_id": "unclassified-work",
+    "worker_id": null,
+    "summary": "test scar git hook",
+    "progress": 0,
+    "files_touched": "[\".scar/context.md\",\".scar/exports/checkpoints.json\",\".scar/exports/features.json\",\"package-lock.json\",\"package.json\",\"src/adapters.js\",\"src/cli.js\",\"src/db.js\",\"src/infer.js\",\"src/mcp.js\",\"src/render.js\"]",
+    "blockers": "[]",
+    "next_steps": "[]",
+    "source": "git_hook",
+    "created_at": "2026-06-18T21:47:55.086Z"
+  },
+  {
+    "id": "6764d52b-67d8-4613-b257-2f3a09ecabe3",
+    "feature_id": "unclassified-work",
+    "worker_id": null,
+    "summary": "verify scar git hook",
+    "progress": 0,
+    "files_touched": "[\".scar/context.md\",\".scar/exports/checkpoints.json\",\".scar/exports/features.json\",\"package-lock.json\",\"package.json\",\"src/adapters.js\",\"src/cli.js\",\"src/db.js\",\"src/infer.js\",\"src/mcp.js\",\"src/render.js\"]",
+    "blockers": "[]",
+    "next_steps": "[]",
+    "source": "git_hook",
+    "created_at": "2026-06-18T21:48:19.546Z"
   }
 ]

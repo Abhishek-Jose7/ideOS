@@ -15,16 +15,28 @@
     "smoke": "node ./scripts/smoke-test.js"
   },
   "dependencies": {
+    "@inkjs/ui": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^12.11.1"
+    "better-sqlite3": "^12.11.1",
+    "chokidar": "^5.0.0",
+    "dotenv": "^17.4.2",
+    "ink": "^7.1.0",
+    "react": "^19.2.7"
   },
   "engines": {
     "node": ">=20"
   },
   "files": [
+    ".env.example",
     "README.md",
+    "cloud",
+    "migrations",
     "scripts",
-    "src"
+    "src",
+    "wrangler.jsonc"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.102.0"
+  }
 }

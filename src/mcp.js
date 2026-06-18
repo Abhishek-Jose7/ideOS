@@ -1,11 +1,16 @@
 #!/usr/bin/env node
+import 'dotenv/config'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import path from 'node:path'
+import { cloudCall, useCloudBackend } from './cloud-client.js'
 import { ensureFeature, exportState, insertCheckpoint, openStore } from './db.js'
-import { inferFeature } from './infer.js'
-import { renderExplain, renderResume } from './render.js'
+import { currentBranch, recentFiles } from './git.js'
+import { inferFeatureSmart } from './infer.js'
+import { normalizeDecision } from './groq.js'
+import { renderExplain, renderHandoff, renderResume } from './render.js'
+import { startFileWatcher } from './watcher.js'
 import { nowIso } from './time.js'
 
 const workspace = process.env.SCAR_WORKSPACE
@@ -15,6 +20,8 @@ const server = new McpServer({
   name: 'scar',
   version: '0.1.0'
 })
+
+startFileWatcher(root)
 
 server.registerResource(
   'scar-context',
@@ -37,6 +44,7 @@ server.registerTool(
     inputSchema: {}
   },
   async () => withStore((store) => {
+    if (useCloudBackend()) return cloudCall('/state').then(json)
     const features = store.db.prepare('SELECT * FROM features ORDER BY updated_at DESC').all()
     const active_workers = store.db.prepare('SELECT * FROM workers ORDER BY last_heartbeat DESC').all()
     const decisions = store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all()
@@ -52,7 +60,10 @@ server.registerTool(
     description: 'Infer likely feature from branch, recent files, and known features.',
     inputSchema: {}
   },
-  async () => withStore((store) => json(inferFeature(store)))
+  async () => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/current-work', { method: 'POST', body: { branch: currentBranch(), files: recentFiles() } }))
+    return withStore((store) => inferFeatureSmart(store).then(json))
+  }
 )
 
 server.registerTool(
@@ -67,6 +78,7 @@ server.registerTool(
     }
   },
   async ({ feature, ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' }) => withStore((store) => {
+    if (useCloudBackend()) return cloudCall('/tool/claim', { method: 'POST', body: { feature, ide, name } }).then(json)
     const row = ensureFeature(store, feature)
     const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
     const now = nowIso()
@@ -89,18 +101,28 @@ server.registerTool(
     title: 'Scar remember',
     description: 'Store a decision, optionally scoped to a feature.',
     inputSchema: {
-      key: z.string(),
-      value: z.string(),
-      feature: z.string().optional()
+      key: z.string().optional(),
+      value: z.string().optional(),
+      feature: z.string().optional(),
+      prompt: z.string().optional()
     }
   },
-  async ({ key, value, feature }) => withStore((store) => {
-    const target = feature ? ensureFeature(store, feature) : null
+  async ({ key, value, feature, prompt }) => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/remember', { method: 'POST', body: { key, value, feature, prompt } }))
+    return withStore(async (store) => {
+    const features = store.db.prepare('SELECT * FROM features ORDER BY updated_at DESC').all()
+    const normalized = await normalizeDecision({ prompt, key, value, feature, features })
+    const finalKey = normalized?.key || key
+    const finalValue = normalized?.value || value
+    if (!finalKey || !finalValue) return json({ error: 'scar_remember needs key/value or a prompt that Groq can normalize.' })
+    const targetFeature = normalized?.feature || feature
+    const target = targetFeature ? ensureFeature(store, targetFeature) : null
     store.db.prepare('INSERT INTO decisions (id, feature_id, key, value, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(crypto.randomUUID(), target?.id || null, key, value, process.env.USERNAME || process.env.USER || 'developer', nowIso())
+      .run(crypto.randomUUID(), target?.id || null, finalKey, finalValue, process.env.USERNAME || process.env.USER || 'developer', nowIso())
     exportState(store)
-    return json({ remembered: key, feature_id: target?.id || null })
-  })
+    return json({ remembered: finalKey, value: finalValue, feature_id: target?.id || null })
+    })
+  }
 )
 
 server.registerTool(
@@ -113,14 +135,17 @@ server.registerTool(
       feature: z.string().optional()
     }
   },
-  async ({ key, feature } = {}) => withStore((store) => {
+  async ({ key, feature } = {}) => {
+    if (useCloudBackend()) return json(await cloudCall('/state'))
+    return withStore((store) => {
     const rows = key
       ? store.db.prepare('SELECT * FROM decisions WHERE key = ? ORDER BY created_at DESC').all(key)
       : feature
         ? store.db.prepare('SELECT * FROM decisions WHERE feature_id = ? ORDER BY created_at DESC').all(feature)
         : store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all()
     return json(rows)
-  })
+    })
+  }
 )
 
 server.registerTool(
@@ -138,10 +163,13 @@ server.registerTool(
       source: z.enum(['manual', 'file_watch', 'git_hook']).optional()
     }
   },
-  async ({ feature, summary, progress = 0, files_touched = [], blockers = [], next_steps = [], source = 'manual' }) => withStore((store) => {
+  async ({ feature, summary, progress = 0, files_touched = [], blockers = [], next_steps = [], source = 'manual' }) => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/checkpoint', { method: 'POST', body: { feature, summary, progress, files_touched, blockers, next_steps, source } }))
+    return withStore((store) => {
     insertCheckpoint(store, { feature, summary, progress, files: files_touched, blockers, nextSteps: next_steps, source })
     return json({ saved: true, feature_id: feature })
-  })
+    })
+  }
 )
 
 server.registerTool(
@@ -151,7 +179,10 @@ server.registerTool(
     description: 'Return a structured feature brief for resuming work.',
     inputSchema: { feature: z.string() }
   },
-  async ({ feature }) => withStore((store) => json({ feature, brief: renderExplain(store, feature) }))
+  async ({ feature }) => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/handoff', { method: 'POST', body: { feature } }))
+    return withStore((store) => renderHandoff(store, feature).then((brief) => json({ feature, brief })))
+  }
 )
 
 server.registerTool(
@@ -164,12 +195,15 @@ server.registerTool(
       summary: z.string()
     }
   },
-  async ({ feature, summary }) => withStore((store) => {
+  async ({ feature, summary }) => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/done', { method: 'POST', body: { feature, summary } }))
+    return withStore((store) => {
     const row = ensureFeature(store, feature)
     store.db.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').run('done', nowIso(), row.id)
     insertCheckpoint(store, { feature: row.id, summary, progress: 100, source: 'manual' })
     return json({ done: row.id })
-  })
+    })
+  }
 )
 
 server.registerTool(
@@ -183,7 +217,9 @@ server.registerTool(
       feature: z.string().optional()
     }
   },
-  async ({ ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer', feature } = {}) => withStore((store) => {
+  async ({ ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer', feature } = {}) => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/heartbeat', { method: 'POST', body: { ide, name, feature } }))
+    return withStore((store) => {
     const target = feature ? ensureFeature(store, feature) : null
     const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
     store.db.prepare(`
@@ -193,13 +229,14 @@ server.registerTool(
     `).run(workerId, name, ide, nowIso(), target?.id || null)
     exportState(store)
     return json({ heartbeat: true, worker_id: workerId })
-  })
+    })
+  }
 )
 
-function withStore(fn) {
+async function withStore(fn) {
   const store = openStore(root)
   try {
-    return fn(store)
+    return await fn(store)
   } finally {
     store.db.close()
   }

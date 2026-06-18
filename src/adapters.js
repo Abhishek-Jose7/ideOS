@@ -103,6 +103,108 @@ export const adapters = [
     }
   },
   {
+    name: 'Trae',
+    id: 'trae',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.trae', 'mcp.json'),
+    rulesPath: (root) => path.join(root, '.trae', 'rules.md'),
+    detect(root) {
+      return fs.existsSync(path.join(root, '.trae')) || fs.existsSync(this.configPath(root))
+    },
+    install(root) {
+      mergeMcpConfig(this.configPath(root), root)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.scar)
+    }
+  },
+  {
+    name: 'Antigravity',
+    id: 'antigravity',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.antigravity', 'mcp.json'),
+    rulesPath: (root) => path.join(root, '.antigravity', 'rules.md'),
+    detect(root) {
+      return fs.existsSync(path.join(root, '.antigravity')) || fs.existsSync(this.configPath(root))
+    },
+    install(root) {
+      mergeMcpConfig(this.configPath(root), root)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.scar)
+    }
+  },
+  {
+    name: 'Continue',
+    id: 'continue',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.continue', 'mcpServers.json'),
+    rulesPath: (root) => path.join(root, '.continue', 'rules.md'),
+    detect(root) {
+      return fs.existsSync(path.join(root, '.continue')) || fs.existsSync(this.configPath(root))
+    },
+    install(root) {
+      mergeMcpConfig(this.configPath(root), root)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.scar)
+    }
+  },
+  {
+    name: 'Cline',
+    id: 'cline',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.cline', 'mcp.json'),
+    rulesPath: (root) => path.join(root, '.cline', 'rules.md'),
+    detect(root) {
+      return fs.existsSync(path.join(root, '.cline')) || fs.existsSync(this.configPath(root))
+    },
+    install(root) {
+      mergeMcpConfig(this.configPath(root), root)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.scar)
+    }
+  },
+  {
+    name: 'Roo Code',
+    id: 'roo-code',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.roo', 'mcp.json'),
+    rulesPath: (root) => path.join(root, '.roo', 'rules.md'),
+    detect(root) {
+      return fs.existsSync(path.join(root, '.roo')) || fs.existsSync(this.configPath(root))
+    },
+    install(root) {
+      mergeMcpConfig(this.configPath(root), root)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.scar)
+    }
+  },
+  {
+    name: 'Claude Code',
+    id: 'claude-code',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.claude', 'mcp.json'),
+    rulesPath: (root) => path.join(root, '.claude', 'CLAUDE.md'),
+    detect(root) {
+      return fs.existsSync(path.join(root, '.claude')) || fs.existsSync(this.configPath(root))
+    },
+    install(root) {
+      mergeMcpConfig(this.configPath(root), root)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.scar)
+    }
+  },
+  {
     name: 'Zed',
     id: 'zed',
     transport: 'stdio',
@@ -140,6 +242,17 @@ export function installAdapters(root, { all = true } = {}) {
       verified: adapter.verify(root)
     }
   })
+}
+
+export function adapterInventory(root) {
+  return adapters.map((adapter) => ({
+    name: adapter.name,
+    id: adapter.id,
+    transport: adapter.transport,
+    config: adapter.configPath(root),
+    detected: adapter.detect(root),
+    configured: adapter.verify(root)
+  }))
 }
 
 export function writeAgents(root = projectRoot()) {

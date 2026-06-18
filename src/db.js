@@ -229,3 +229,14 @@ export function insertCheckpoint(store, { feature, workerId = null, summary, pro
   logActivity(store, workerId, 'checkpoint', `${target.id}: ${summary}`)
   exportState(store)
 }
+
+export function recordGitActivity(store, { workerId = 'git:post-commit', ide = 'git', name = 'git hook', feature = null } = {}) {
+  const now = nowIso()
+  store.db.prepare(`
+    INSERT INTO workers (id, name, ide, last_git_activity, current_feature)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET last_git_activity = excluded.last_git_activity, current_feature = COALESCE(excluded.current_feature, workers.current_feature)
+  `).run(workerId, name, ide, now, feature)
+  logActivity(store, workerId, 'git_activity', feature || 'post-commit')
+  exportState(store)
+}

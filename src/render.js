@@ -1,4 +1,5 @@
 import { serializeCheckpoint } from './db.js'
+import { synthesizeHandoff } from './groq.js'
 import { statusMark, workerStatus } from './status.js'
 import { ago, duration } from './time.js'
 
@@ -44,6 +45,16 @@ export function renderResume(store) {
     '  Windsurf',
     '  KiloCode'
   ].join('\n')
+}
+
+export async function renderHandoff(store, query) {
+  const feature = findFeature(store, query)
+  if (!feature) return `Feature not found: ${query}`
+  const summary = featureSummary(store, feature)
+  const workers = store.db.prepare('SELECT * FROM workers WHERE current_feature = ? ORDER BY last_heartbeat DESC').all(feature.id)
+  const llm = await synthesizeHandoff({ ...summary, workers })
+  if (llm?.brief) return llm.brief
+  return renderExplain(store, query)
 }
 
 export function renderExplain(store, query) {
@@ -98,18 +109,18 @@ export function renderDashboard(store) {
   const features = store.db.prepare('SELECT f.*, COALESCE(c.progress, 0) AS progress FROM features f LEFT JOIN checkpoints c ON c.id = (SELECT id FROM checkpoints WHERE feature_id = f.id ORDER BY created_at DESC LIMIT 1) ORDER BY f.updated_at DESC').all()
   const decisions = store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC LIMIT 5').all()
   return [
-    '┌─ Scar ───────────────────────────────┐',
-    '│ Active                               │',
-    ...(workers.length ? workers.map((worker) => `│ ${statusMark(workerStatus(worker))} ${pad(worker.ide, 10)} ${pad(worker.current_feature || 'idle', 18)} ${pad(ago(worker.last_heartbeat || worker.last_file_activity || worker.last_git_activity), 8)} │`) : ['│ ○ no workers yet                     │']),
-    '│                                      │',
-    '│ Features                             │',
-    ...(features.length ? features.map((feature) => `│ ${feature.status === 'active' ? '🔒' : '○'} ${pad(feature.id, 18)} ${pad(`${feature.progress}%`, 6)} ${pad(feature.status, 11)} │`) : ['│ ○ none                                │']),
-    '│                                      │',
-    '│ Decisions                            │',
-    ...(decisions.length ? decisions.map((decision) => `│ ${pad(decision.key, 12)} → ${pad(decision.value, 18)} │`) : ['│ none recorded                         │']),
-    '│                                      │',
-    '│ [e] explain  [t] timeline  [r] resume │',
-    '└──────────────────────────────────────┘'
+    'Scar - dashboard',
+    '',
+    'Active',
+    ...(workers.length ? workers.map((worker) => `${statusMark(workerStatus(worker))} ${pad(worker.ide, 10)} ${pad(worker.current_feature || 'idle', 22)} ${ago(worker.last_heartbeat || worker.last_file_activity || worker.last_git_activity)}`) : ['- no workers yet']),
+    '',
+    'Features',
+    ...(features.length ? features.map((feature) => `${feature.status === 'active' ? '*' : '-'} ${pad(feature.id, 22)} ${pad(`${feature.progress}%`, 6)} ${feature.status}`) : ['- none']),
+    '',
+    'Decisions',
+    ...(decisions.length ? decisions.map((decision) => `${pad(decision.key, 16)} -> ${decision.value}`) : ['none recorded']),
+    '',
+    '[e] explain  [t] timeline  [r] resume  [q] quit'
   ].join('\n')
 }
 
