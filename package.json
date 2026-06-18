@@ -1,0 +1,30 @@
+{
+  "name": "scar",
+  "version": "0.1.0",
+  "description": "Development continuity layer for AI IDEs.",
+  "type": "module",
+  "bin": {
+    "scar": "./src/cli.js",
+    "scar-mcp": "./src/mcp.js"
+  },
+  "scripts": {
+    "scar": "node ./src/cli.js",
+    "scar-mcp": "node ./src/mcp.js",
+    "check": "node ./src/cli.js doctor",
+    "demo": "node ./src/cli.js init --yes && node ./src/cli.js seed-demo && node ./src/cli.js resume",
+    "smoke": "node ./scripts/smoke-test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.11.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "README.md",
+    "scripts",
+    "src"
+  ],
+  "license": "MIT"
+}

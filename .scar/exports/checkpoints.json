@@ -1,0 +1,14 @@
+[
+  {
+    "id": "9a25ffe6-6091-4260-98b6-71275e02ad1e",
+    "feature_id": "authentication",
+    "worker_id": null,
+    "summary": "JWT signing, auth middleware, login endpoint",
+    "progress": 60,
+    "files_touched": "[\"auth/jwt.ts\",\"middleware/auth.ts\",\"types/auth.ts\"]",
+    "blockers": "[\"Refresh token rotation not started\"]",
+    "next_steps": "[\"Refresh token rotation\",\"Auth tests\"]",
+    "source": "manual",
+    "created_at": "2026-06-18T21:10:56.408Z"
+  }
+]

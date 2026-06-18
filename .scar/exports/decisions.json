@@ -1,0 +1,10 @@
+[
+  {
+    "id": "f626f411-31f7-4b37-8a1c-0de00a4e8603",
+    "feature_id": "authentication",
+    "key": "auth-strategy",
+    "value": "JWT, RS256, stateless",
+    "created_by": "demo",
+    "created_at": "2026-06-18T21:10:56.415Z"
+  }
+]

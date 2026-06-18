@@ -1,0 +1,3 @@
+node_modules/
+.scar/db.sqlite
+.scar/db.sqlite-*
