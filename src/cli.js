@@ -8,12 +8,12 @@ import { adapterInventory, adapters, writeAgents } from './adapters.js'
 import { cloudCall, useCloudBackend } from './cloud-client.js'
 import { ensureFeature, exportState, insertCheckpoint, openStore, recordGitActivity } from './db.js'
 import { inferFeature, inferFeatureSmart } from './infer.js'
-import { normalizeDecision } from './groq.js'
+import { normalizeDecision, checkFeatureOverlap } from './groq.js'
 import { projectRoot, scarDir } from './paths.js'
 import { renderDashboard, renderExplain, renderHandoff, renderResume, renderTimeline } from './render.js'
 import { lastCommitSummary, recentFiles } from './git.js'
 import { nowIso } from './time.js'
-import { promptInit } from './init-prompt.js'
+import { promptInit, promptResume, launchIDE } from './init-prompt.js'
 
 const args = process.argv.slice(2)
 const command = args[0] || 'help'
@@ -31,10 +31,32 @@ async function main() {
     case 'init':
       await init()
       break
-    case 'resume':
-      if (useCloudBackend()) console.log(renderCloudResume(await cloudCall('/state')))
-      else await withStore((store) => console.log(renderResume(store)))
+    case 'resume': {
+      let stateData
+      if (useCloudBackend()) {
+        stateData = await cloudCall('/state')
+        console.log(renderCloudResume(stateData))
+      } else {
+        await withStore(async (store) => {
+          let text = renderResume(store)
+          if (process.stdin.isTTY) {
+            const lines = text.split('\n')
+            const idx = lines.indexOf('Open in:')
+            if (idx !== -1) text = lines.slice(0, idx).join('\n')
+          }
+          console.log(text)
+        })
+      }
+      const inv = adapterInventory(root)
+      let activeAdps = inv.filter((item) => item.configured)
+      if (activeAdps.length === 0) activeAdps = inv.filter((item) => item.detected)
+      if (activeAdps.length === 0) activeAdps = inv
+      const choices = activeAdps.map((item) => ({ label: item.name, value: item.id }))
+      const selectedIde = await promptResume({ ides: choices })
+      console.log(`\nOpening in ${selectedIde}...`)
+      launchIDE(selectedIde, root)
       break
+    }
     case 'explain':
       requireArg(positional(0), 'Usage: scar explain <feature>')
       if (useCloudBackend()) console.log(renderCloudExplain(await cloudCall('/state'), positional(0)))
@@ -71,6 +93,9 @@ async function main() {
       break
     case 'ides':
       listIdes()
+      break
+    case 'mcp':
+      await import('./mcp.js')
       break
     case 'done':
       await done()
@@ -143,7 +168,7 @@ async function init() {
     exportState(store)
     const selected = new Set(options.selected || adapters.map((adapter) => adapter.id))
     for (const adapter of adapters.filter((adapter) => selected.has(adapter.id))) {
-      adapter.install(root)
+      adapter.install(root, { backend: options.backend, workspaceUrl: options.workspaceUrl })
     }
     const verified = adapters.filter((adapter) => selected.has(adapter.id)).map((adapter) => ({
       name: adapter.name,
@@ -171,8 +196,8 @@ async function init() {
     console.log('  ✓ Layer 1 MCP config written')
     console.log('  ✓ Layer 2 IDE rules written')
     console.log('')
-    console.log('  Notice: Scar can verify adapter files, but it cannot verify that each IDE is logged in.')
-    console.log('  Open each IDE once and confirm its account/MCP settings are initialized.')
+    console.log('  Warning/Notice: Scar can verify adapter files, but it cannot verify that each IDE is logged in or initialized.')
+    console.log('  Open each IDE once and confirm that you are properly logged in and that the MCP server is initialized.')
     console.log('')
     console.log('  scar resume     → continue where you left off')
     console.log('  scar start      → open dashboard')
@@ -226,10 +251,15 @@ async function claim() {
     const result = await cloudCall('/tool/claim', { method: 'POST', body: { feature: featureName, ide, name } })
     console.log(`${ide} claimed ${result.claimed}.`)
     if (result.conflicts?.length) console.log(`Conflicts: ${result.conflicts.map((worker) => worker.id).join(', ')}`)
+    if (result.overlap?.duplicate) {
+      console.log(`Warning/Notice: '${featureName}' has semantic overlap with existing feature '${result.overlap.overlap_feature}' (reason: ${result.overlap.reason}).`)
+    }
     return
   }
-  await withStore((store) => {
+  await withStore(async (store) => {
     const feature = ensureFeature(store, featureName)
+    const features = store.db.prepare('SELECT * FROM features WHERE id <> ?').all(feature.id)
+    const overlap = await checkFeatureOverlap({ newFeature: feature.id, features })
     const ide = flagValue('--ide') || process.env.SCAR_IDE || 'cli'
     const name = flagValue('--name') || process.env.USERNAME || process.env.USER || 'developer'
     const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
@@ -243,6 +273,9 @@ async function claim() {
       .run(crypto.randomUUID(), workerId, ide, feature.id, now)
     exportState(store)
     console.log(`${ide} claimed ${feature.name}.`)
+    if (overlap?.duplicate) {
+      console.log(`Warning/Notice: '${feature.name}' has semantic overlap with existing feature '${overlap.overlap_feature}' (reason: ${overlap.reason}).`)
+    }
   })
 }
 
@@ -357,8 +390,8 @@ function listIdes() {
     console.log(`${status.padEnd(11)} ${item.name.padEnd(14)} ${item.config}`)
   }
   console.log('')
-  console.log('Notice: configured means Scar wrote/verified adapter files. It does not prove the IDE is logged in.')
-  console.log('Open each IDE once and confirm the account and MCP server are enabled.')
+  console.log('Warning/Notice: configured means Scar wrote/verified adapter files. It does NOT guarantee that the IDE is logged in or initialized.')
+  console.log('You must manually open each IDE once and confirm that you are properly logged in and that the MCP server is initialized and enabled.')
 }
 
 function renderCloudResume(state) {

@@ -26,7 +26,7 @@ if (!timeline.includes('checkpoint')) throw new Error('timeline did not include 
 
 const transport = new StdioClientTransport({
   command: process.execPath,
-  args: [mcp],
+  args: [cli, 'mcp'],
   env: { ...process.env, SCAR_WORKSPACE: path.join(tmp, '.scar') }
 })
 const client = new Client({ name: 'scar-smoke', version: '0.1.0' })

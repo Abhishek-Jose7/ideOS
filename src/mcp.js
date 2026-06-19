@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import 'dotenv/config'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import path from 'node:path'
@@ -8,8 +8,8 @@ import { cloudCall, useCloudBackend } from './cloud-client.js'
 import { ensureFeature, exportState, insertCheckpoint, openStore } from './db.js'
 import { currentBranch, recentFiles } from './git.js'
 import { inferFeatureSmart } from './infer.js'
-import { normalizeDecision } from './groq.js'
-import { renderExplain, renderHandoff, renderResume } from './render.js'
+import { normalizeDecision, checkFeatureOverlap } from './groq.js'
+import { renderExplain, renderHandoff, renderResume, findFeature, featureSummary } from './render.js'
 import { startFileWatcher } from './watcher.js'
 import { nowIso } from './time.js'
 
@@ -34,6 +34,48 @@ server.registerResource(
   async () => withStore((store) => ({
     contents: [{ uri: 'scar://context', mimeType: 'text/markdown', text: renderResume(store) }]
   }))
+)
+
+server.registerResource(
+  'scar-decisions',
+  'scar://decisions',
+  {
+    title: 'Scar Workspace Decisions',
+    description: 'Engineering decisions recorded in this project',
+    mimeType: 'application/json'
+  },
+  async () => withStore((store) => {
+    const decisions = store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all()
+    return {
+      contents: [{ uri: 'scar://decisions', mimeType: 'application/json', text: JSON.stringify(decisions, null, 2) }]
+    }
+  })
+)
+
+server.registerResource(
+  'scar-feature-detail',
+  new ResourceTemplate('scar://feature/{id}', {
+    list: async () => withStore((store) => {
+      const features = store.db.prepare('SELECT * FROM features').all()
+      return {
+        resources: features.map((feature) => ({
+          uri: `scar://feature/${feature.id}`,
+          name: feature.name,
+          mimeType: 'text/markdown'
+        }))
+      }
+    })
+  }),
+  {
+    title: 'Scar Feature Detail',
+    description: 'Detailed explanation of a specific feature'
+  },
+  async (uri, variables) => withStore((store) => {
+    const id = variables.id
+    return {
+      contents: [{ uri: uri.toString(), mimeType: 'text/markdown', text: renderExplain(store, id) }]
+    }
+  })
 )
 
 server.registerTool(
@@ -77,22 +119,26 @@ server.registerTool(
       name: z.string().optional()
     }
   },
-  async ({ feature, ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' }) => withStore((store) => {
+  async ({ feature, ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' }) => {
     if (useCloudBackend()) return cloudCall('/tool/claim', { method: 'POST', body: { feature, ide, name } }).then(json)
-    const row = ensureFeature(store, feature)
-    const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
-    const now = nowIso()
-    const existing = store.db.prepare('SELECT * FROM workers WHERE current_feature = ? AND id <> ?').all(row.id, workerId)
-    store.db.prepare(`
-      INSERT INTO workers (id, name, ide, last_heartbeat, current_feature)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET last_heartbeat = excluded.last_heartbeat, current_feature = excluded.current_feature
-    `).run(workerId, name, ide, now, row.id)
-    store.db.prepare('INSERT INTO sessions (id, worker_id, ide, feature_id, started_at) VALUES (?, ?, ?, ?, ?)')
-      .run(crypto.randomUUID(), workerId, ide, row.id, now)
-    exportState(store)
-    return json({ claimed: row.id, conflicts: existing })
-  })
+    return withStore(async (store) => {
+      const row = ensureFeature(store, feature)
+      const features = store.db.prepare('SELECT * FROM features WHERE id <> ?').all(row.id)
+      const overlap = await checkFeatureOverlap({ newFeature: row.id, features })
+      const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
+      const now = nowIso()
+      const existing = store.db.prepare('SELECT * FROM workers WHERE current_feature = ? AND id <> ?').all(row.id, workerId)
+      store.db.prepare(`
+        INSERT INTO workers (id, name, ide, last_heartbeat, current_feature)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET last_heartbeat = excluded.last_heartbeat, current_feature = excluded.current_feature
+      `).run(workerId, name, ide, now, row.id)
+      store.db.prepare('INSERT INTO sessions (id, worker_id, ide, feature_id, started_at) VALUES (?, ?, ?, ?, ?)')
+        .run(crypto.randomUUID(), workerId, ide, row.id, now)
+      exportState(store)
+      return json({ claimed: row.id, conflicts: existing, overlap })
+    })
+  }
 )
 
 server.registerTool(
@@ -229,6 +275,33 @@ server.registerTool(
     `).run(workerId, name, ide, nowIso(), target?.id || null)
     exportState(store)
     return json({ heartbeat: true, worker_id: workerId })
+    })
+  }
+)
+
+server.registerTool(
+  'scar_explain',
+  {
+    title: 'Scar explain',
+    description: 'Explain detailed status, active workers, checkpoints, and decisions for a feature.',
+    inputSchema: {
+      feature: z.string()
+    }
+  },
+  async ({ feature }) => {
+    if (useCloudBackend()) return json(await cloudCall('/tool/explain', { method: 'POST', body: { feature } }))
+    return withStore((store) => {
+      const feat = findFeature(store, feature)
+      if (!feat) return json({ error: `Feature not found: ${feature}` })
+      const summary = featureSummary(store, feat)
+      const workers = store.db.prepare('SELECT * FROM workers WHERE current_feature = ? ORDER BY last_heartbeat DESC').all(feat.id)
+      return json({
+        feature: feat,
+        workers,
+        checkpoints: summary.checkpoints,
+        decisions: summary.decisions,
+        sessions: summary.sessions
+      })
     })
   }
 )

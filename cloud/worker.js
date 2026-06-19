@@ -16,6 +16,7 @@ export default {
     if (url.pathname === '/tool/file-activity') return json(await fileActivity(request, env))
     if (url.pathname === '/tool/done') return json(await done(request, env))
     if (url.pathname === '/tool/heartbeat') return json(await heartbeat(request, env))
+    if (url.pathname === '/tool/explain') return json(await explainFeature(request, env))
 
     return json({ error: 'Not found' }, 404)
   }
@@ -95,6 +96,12 @@ async function claim(request, env) {
   const input = await request.json()
   const now = new Date().toISOString()
   await ensureFeature(env.DB, input.feature, now)
+  const features = (await env.DB.prepare('SELECT * FROM features WHERE id <> ?').bind(input.feature).all()).results
+  const overlap = await groq(env, {
+    system: 'You analyze whether a newly claimed feature has high semantic overlap/duplication with any existing features. Return JSON only: {"duplicate":true|false,"overlap_feature":"existing-feature-id-or-null","reason":"explanation of overlap"}',
+    user: JSON.stringify({ newFeature: input.feature, features }),
+    fallback: { duplicate: false, overlap_feature: null, reason: '' }
+  })
   const ide = input.ide || 'cloud'
   const name = input.name || 'developer'
   const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
@@ -105,7 +112,7 @@ async function claim(request, env) {
   await env.DB.prepare('INSERT INTO sessions (id, worker_id, ide, feature_id, started_at) VALUES (?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), workerId, ide, input.feature, now)
     .run()
-  return { claimed: input.feature, conflicts }
+  return { claimed: input.feature, conflicts, overlap }
 }
 
 async function checkpoint(request, env) {
@@ -115,6 +122,16 @@ async function checkpoint(request, env) {
   await env.DB.prepare('INSERT INTO checkpoints (id, feature_id, worker_id, summary, progress, files_touched, blockers, next_steps, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), input.feature, input.worker_id || null, input.summary, input.progress || 0, JSON.stringify(input.files_touched || []), JSON.stringify(input.blockers || []), JSON.stringify(input.next_steps || []), input.source || 'manual', now)
     .run()
+  if (input.source === 'git_hook') {
+    const workerId = 'git:post-commit'
+    const name = 'git hook'
+    const ide = 'git'
+    await env.DB.prepare(`
+      INSERT INTO workers (id, name, ide, last_git_activity, current_feature)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET last_git_activity = excluded.last_git_activity, current_feature = COALESCE(excluded.current_feature, workers.current_feature)
+    `).bind(workerId, name, ide, now, input.feature || null).run()
+  }
   return { saved: true, feature_id: input.feature }
 }
 
@@ -149,6 +166,23 @@ async function done(request, env) {
     .bind(crypto.randomUUID(), input.feature, null, input.summary || 'Feature complete', 100, '[]', '[]', '[]', 'manual', now)
     .run()
   return { done: input.feature }
+}
+
+async function explainFeature(request, env) {
+  const { feature } = await request.json()
+  const feat = await env.DB.prepare('SELECT * FROM features WHERE id = ? OR lower(name) = lower(?)').bind(feature, feature).first()
+  if (!feat) return { error: `Feature not found: ${feature}` }
+  const checkpoints = (await env.DB.prepare('SELECT * FROM checkpoints WHERE feature_id = ? ORDER BY created_at DESC').bind(feat.id).all()).results
+  const decisions = (await env.DB.prepare('SELECT * FROM decisions WHERE feature_id = ? OR feature_id IS NULL ORDER BY created_at DESC').bind(feat.id).all()).results
+  const sessions = (await env.DB.prepare('SELECT * FROM sessions WHERE feature_id = ? ORDER BY started_at DESC').bind(feat.id).all()).results
+  const workers = (await env.DB.prepare('SELECT * FROM workers WHERE current_feature = ? ORDER BY last_heartbeat DESC').bind(feat.id).all()).results
+  return {
+    feature: feat,
+    workers,
+    checkpoints,
+    decisions,
+    sessions
+  }
 }
 
 async function ensureFeature(db, id, now) {

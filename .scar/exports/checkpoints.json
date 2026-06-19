@@ -46,5 +46,17 @@
     "next_steps": "[]",
     "source": "git_hook",
     "created_at": "2026-06-18T22:08:23.067Z"
+  },
+  {
+    "id": "6c81bde0-0c2f-4a6c-a29e-7fdb6773984e",
+    "feature_id": "unclassified-work",
+    "worker_id": null,
+    "summary": "woah",
+    "progress": 0,
+    "files_touched": "[\".scar/context.md\",\".scar/exports/checkpoints.json\",\".scar/exports/features.json\"]",
+    "blockers": "[]",
+    "next_steps": "[]",
+    "source": "git_hook",
+    "created_at": "2026-06-18T22:12:50.665Z"
   }
 ]

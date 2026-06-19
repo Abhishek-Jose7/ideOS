@@ -4,15 +4,15 @@
   "description": "Development continuity layer for AI IDEs.",
   "type": "module",
   "bin": {
-    "scar": "./src/cli.js",
-    "scar-mcp": "./src/mcp.js"
+    "scar": "./src/cli.js"
   },
   "scripts": {
     "scar": "node ./src/cli.js",
-    "scar-mcp": "node ./src/mcp.js",
+    "mcp": "node ./src/cli.js mcp",
     "check": "node ./src/cli.js doctor",
     "demo": "node ./src/cli.js init --yes && node ./src/cli.js seed-demo && node ./src/cli.js resume",
-    "smoke": "node ./scripts/smoke-test.js"
+    "smoke": "node ./scripts/smoke-test.js",
+    "test:watcher": "node ./scripts/watcher-test.js"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
@@ -24,7 +24,7 @@
     "react": "^19.2.7"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "files": [
     ".env.example",

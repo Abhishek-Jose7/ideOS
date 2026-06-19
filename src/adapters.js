@@ -3,25 +3,30 @@ import path from 'node:path'
 import { homePath, projectRoot, scarDir } from './paths.js'
 import { readJson, writeJson } from './json.js'
 
-function mcpConfig(root = projectRoot()) {
+function mcpConfig(root = projectRoot(), config = {}) {
+  const env = { SCAR_WORKSPACE: '${workspaceFolder}/.scar' }
+  if (config.backend === 'cloud') {
+    env.SCAR_BACKEND = 'cloud'
+    if (config.workspaceUrl) env.SCAR_WORKSPACE_URL = config.workspaceUrl
+  }
   return {
     mcpServers: {
       scar: {
         command: 'npx',
-        args: ['-y', 'scar-mcp'],
-        env: { SCAR_WORKSPACE: '${workspaceFolder}/.scar' }
+        args: ['-y', 'scar', 'mcp'],
+        env
       }
     }
   }
 }
 
-function mergeMcpConfig(file, root) {
+function mergeMcpConfig(file, root, config = {}) {
   const existing = readJson(file, {})
   const next = {
     ...existing,
     mcpServers: {
       ...(existing.mcpServers || {}),
-      ...mcpConfig(root).mcpServers
+      ...mcpConfig(root, config).mcpServers
     }
   }
   writeJson(file, next)
@@ -52,8 +57,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.cursor')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -69,8 +74,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.windsurf')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -86,14 +91,14 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.vscode')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
+    install(root, config = {}) {
       const file = this.configPath(root)
       const existing = readJson(file, {})
       writeJson(file, {
         ...existing,
         'mcp.servers': {
           ...(existing['mcp.servers'] || {}),
-          scar: mcpConfig(root).mcpServers.scar
+          scar: mcpConfig(root, config).mcpServers.scar
         }
       })
       writeRules(this.rulesPath(root))
@@ -111,8 +116,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.trae')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -128,8 +133,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.antigravity')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -145,8 +150,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.continue')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -162,8 +167,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.cline')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -179,8 +184,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.roo')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -196,8 +201,8 @@ export const adapters = [
     detect(root) {
       return fs.existsSync(path.join(root, '.claude')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
-      mergeMcpConfig(this.configPath(root), root)
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
       writeRules(this.rulesPath(root))
     },
     verify(root) {
@@ -208,19 +213,24 @@ export const adapters = [
     name: 'Zed',
     id: 'zed',
     transport: 'stdio',
-    configPath: () => homePath('.config', 'zed', 'settings.json'),
-    rulesPath: (root) => path.join(root, '.zed', 'rules.md'),
+    configPath: () => {
+      if (process.platform === 'win32') {
+        return path.join(process.env.APPDATA || homePath('AppData', 'Roaming'), 'Zed', 'settings.json')
+      }
+      return homePath('.config', 'zed', 'settings.json')
+    },
+    rulesPath: (root) => path.join(root, '.zed', 'rules'),
     detect(root) {
       return fs.existsSync(path.join(root, '.zed')) || fs.existsSync(this.configPath(root))
     },
-    install(root) {
+    install(root, config = {}) {
       const file = this.configPath(root)
       const existing = readJson(file, {})
       writeJson(file, {
         ...existing,
         context_servers: {
           ...(existing.context_servers || {}),
-          scar: mcpConfig(root).mcpServers.scar
+          scar: mcpConfig(root, config).mcpServers.scar
         }
       })
       writeRules(this.rulesPath(root))

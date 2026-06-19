@@ -7,7 +7,7 @@ Scar is a development continuity layer for AI IDEs. It stores project memory by 
 ## What You Get
 
 - A `scar` CLI for setup, resume, explain, timeline, dashboard, checkpoints, and decisions.
-- A `scar-mcp` server for AI IDEs.
+- A `scar` CLI for setup, resume, explain, timeline, dashboard, checkpoints, decisions, and starting the MCP server.
 - Local SQLite storage in `.scar/db.sqlite`.
 - Mergeable JSON exports in `.scar/exports`.
 - Groq-powered feature inference, handoffs, and decision normalization.
@@ -29,81 +29,90 @@ git --version
 
 Use Node.js 20 or newer.
 
-## Local Development Setup
+## Step-by-Step Newbie Setup Guide
 
-From this repository:
+Follow this end-to-end flow to get Scar set up and running on your machine:
 
+### 1. Install Requirements
+Make sure you have Node.js (version 18 or newer), npm, and Git installed:
 ```bash
-npm install
+node --version
+npm --version
+git --version
 ```
 
-Create a local env file:
-
+### 2. Install Scar Globally
+Install the Scar package globally on your machine so the `scar` command is available anywhere:
 ```bash
+# From the project root folder:
+npm install -g .
+```
+
+### 3. Set Up Environment Secrets
+Create a `.env` file in your project root containing your Groq API key:
+```bash
+# On macOS/Linux:
+cp .env.example .env
+
+# On Windows (cmd):
 copy .env.example .env
 ```
-
 Edit `.env` and set:
-
 ```bash
 GROQ_API_KEY=your_groq_api_key_here
 SCAR_BACKEND=local
 ```
+*(Do not commit `.env`. It is ignored on purpose. Optionally, set the key in your terminal session, e.g., in PowerShell: `$env:GROQ_API_KEY="your_groq_api_key_here"`)*
 
-Do not commit `.env`. It is ignored on purpose.
-
-In PowerShell for the current terminal only:
-
-```powershell
-$env:GROQ_API_KEY="your_groq_api_key_here"
-$env:SCAR_BACKEND="local"
-```
-
-Then initialize Scar:
-
+### 4. Initialize Scar in Your Project
+Run the initialization wizard to create the local database, export folders, configure adapters, and set up git hooks:
 ```bash
-node ./src/cli.js init
+# In your target project folder:
+scar init
 ```
+This wizard will:
+- Write Layer 1 (MCP configurations in target IDE folders).
+- Write Layer 2 (Rules files like `.cursor/rules`, `.windsurf/rules`, `.zed/rules`).
+- Write Layer 3 (`.scar/AGENTS.md`) and Layer 4 (`.scar/context.md`).
+- Install the git post-commit hook.
 
-For non-interactive setup:
-
+To run the initialization non-interactively (e.g. in CI or scripts), use:
 ```bash
-node ./src/cli.js init --yes
+scar init --yes
 ```
 
-`scar init` writes:
+### 5. Verify IDE Configuration
+List all available, detected, and configured IDE adapters to check setup status:
+```bash
+scar ides
+```
+> [!WARNING]
+> While Scar writes the configuration files successfully (marking them `configured`), it cannot verify that your IDE account is logged in. Open Cursor, Windsurf, Zed, and other IDEs at least once to confirm you are properly logged in and that the MCP server is initialized and enabled.
 
-- Layer 1: MCP config for selected IDEs.
-- Layer 2: IDE rules files such as `.cursor/rules`, `.windsurf/rules`, `.zed/rules`.
-- Layer 3: `.scar/AGENTS.md`.
-- Layer 4: `.scar/context.md`.
-- Git post-commit hook when the project is a Git repo.
-
-Important notice: Scar can verify adapter files, but it cannot prove every IDE is logged in. Open each IDE once, confirm your account is logged in, and confirm MCP servers are enabled.
+### 6. Resume and Open Your IDE
+Once you are ready to continue your development, run:
+```bash
+scar resume
+```
+This command displays the feature status and prompts you to select which IDE you want to launch. Pressing Enter will automatically open the selected IDE for the current workspace folder!
 
 ## Use The CLI
 
-```bash
-node ./src/cli.js ides
-node ./src/cli.js current-work
-node ./src/cli.js claim authentication
-node ./src/cli.js checkpoint authentication --summary "JWT signing done" --progress 40 --files auth/jwt.ts
-node ./src/cli.js remember auth-strategy "JWT, RS256, stateless" --feature authentication
-node ./src/cli.js remember --prompt "For authentication we chose RS256 because multiple services need to verify tokens"
-node ./src/cli.js resume
-node ./src/cli.js explain authentication
-node ./src/cli.js timeline authentication
-node ./src/cli.js handoff authentication
-node ./src/cli.js start
-node ./src/cli.js start --once
-```
-
-After global install, use `scar` instead of `node ./src/cli.js`.
+Now that `scar` is globally installed, you can use the `scar` command directly:
 
 ```bash
-npm install -g .
-scar init
+scar ides
+scar current-work
+scar claim authentication
+scar checkpoint authentication --summary "JWT signing done" --progress 40 --files auth/jwt.ts
+scar remember auth-strategy "JWT, RS256, stateless" --feature authentication
+scar remember --prompt "For authentication we chose RS256 because multiple services need to verify tokens"
 scar resume
+scar explain authentication
+scar timeline authentication
+scar handoff authentication
+scar start
+scar start --once
 ```
 
 `scar start` is the interactive terminal dashboard. Use `scar start --once` when you only want a single dashboard render for scripts or logs.
@@ -135,7 +144,7 @@ Statuses mean:
 - `detected`: Scar found an IDE folder but has not configured Scar there yet.
 - `available`: Scar knows how to configure it, but it was not detected.
 
-Again, `configured` does not mean the IDE account is logged in.
+Warning/Notice: configured means Scar wrote/verified adapter files. It does NOT guarantee that the IDE is logged in or initialized. You must manually open each IDE once and verify that you are properly logged in and that the MCP server is initialized and enabled.
 
 ## MCP Tools
 
@@ -158,7 +167,7 @@ The IDE config points at:
   "mcpServers": {
     "scar": {
       "command": "npx",
-      "args": ["-y", "scar-mcp"],
+      "args": ["-y", "scar", "mcp"],
       "env": {
         "SCAR_WORKSPACE": "${workspaceFolder}/.scar"
       }
@@ -167,7 +176,7 @@ The IDE config points at:
 }
 ```
 
-When an IDE spawns `scar-mcp`, Scar also starts a file-save watcher. Saves update `last_file_activity`. After 30 seconds of quiet, Scar writes a `file_watch` checkpoint and re-exports JSON.
+When an IDE spawns `scar mcp`, Scar also starts a file-save watcher. Saves update `last_file_activity`. After 30 seconds of quiet, Scar writes a `file_watch` checkpoint and re-exports JSON.
 
 ## Git Hook Verification
 

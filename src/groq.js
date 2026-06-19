@@ -69,3 +69,16 @@ export async function normalizeDecision({ prompt, key, value, feature, features 
     user: JSON.stringify({ prompt, key, value, feature, features }, null, 2)
   })
 }
+
+export async function checkFeatureOverlap({ newFeature, features }) {
+  const fallback = { duplicate: false, overlap_feature: null, reason: '' }
+  return groqJson({
+    fallback,
+    system: [
+      'You analyze whether a newly claimed feature has high semantic overlap/duplication with any existing features.',
+      'For example, "login flow" overlaps heavily with "authentication", and "DB schema setup" overlaps with "database migration".',
+      'Return JSON only: {"duplicate":true|false,"overlap_feature":"existing-feature-id-or-null","reason":"explanation of overlap"}'
+    ].join('\n'),
+    user: JSON.stringify({ newFeature, features }, null, 2)
+  })
+}

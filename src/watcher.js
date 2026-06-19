@@ -8,6 +8,7 @@ import { nowIso } from './time.js'
 
 export function startFileWatcher(root, { ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' } = {}) {
   if (process.env.SCAR_WATCH === '0') return null
+  debug(`watching ${root}`)
   const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
   const touched = new Set()
   let timer = null
@@ -16,14 +17,14 @@ export function startFileWatcher(root, { ide = process.env.SCAR_IDE || 'mcp', na
     ignored: [
       /(^|[/\\])\.git([/\\]|$)/,
       /(^|[/\\])node_modules([/\\]|$)/,
-      /(^|[/\\])\.scar[/\\]db\.sqlite/,
-      /(^|[/\\])\.scar[/\\]db\.sqlite-/,
+      /(^|[/\\])\.scar([/\\]|$)/,
       /(^|[/\\])\.wrangler([/\\]|$)/
     ],
     awaitWriteFinish: { stabilityThreshold: 700, pollInterval: 100 }
   })
 
   const onSave = (file) => {
+    debug(`save ${file}`)
     touched.add(rel(root, path.resolve(file)))
     recordFileActivity(root, workerId, ide, name)
     clearTimeout(timer)
@@ -32,6 +33,8 @@ export function startFileWatcher(root, { ide = process.env.SCAR_IDE || 'mcp', na
 
   watcher.on('add', onSave)
   watcher.on('change', onSave)
+  watcher.on('ready', () => debug('ready'))
+  watcher.on('error', (error) => debug(`error ${error.message}`))
   return watcher
 }
 
@@ -56,6 +59,7 @@ function recordFileActivity(root, workerId, ide, name) {
 function checkpointFileActivity(root, workerId, touched) {
   if (touched.size === 0) return
   const files = [...touched].slice(0, 30)
+  debug(`checkpoint ${files.join(', ')}`)
   touched.clear()
   if (useCloudBackend()) {
     cloudCall('/tool/current-work', { method: 'POST', body: { files } })
@@ -93,4 +97,8 @@ function checkpointFileActivity(root, workerId, touched) {
   } finally {
     store.db.close()
   }
+}
+
+function debug(message) {
+  if (process.env.SCAR_WATCH_DEBUG === '1') console.error(`[scar-watch] ${message}`)
 }
