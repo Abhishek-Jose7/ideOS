@@ -1,139 +1,142 @@
 # ideOS
 
-### Development doesn't stop when you do.
+### Your project memory, across every IDE.
 
-[![NPM Version](https://img.shields.io/npm/v/ideos-cli?color=indigo)](https://www.npmjs.com/package/ideos-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Support](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
-
-ideOS is a development continuity layer. It lives in your project directory and gives every AI editor (Cursor, Windsurf, Zed, Claude Code, Trae, etc.) — running simultaneously or used sequentially — a shared, persistent understanding of the project.
-
-It is not an IDE. It is not an AI agent. It is not a task board. It is the memory layer underneath all of them.
+**ideOS** is a development continuity layer that gives Cursor, Windsurf, Zed, Claude Code, and Trae a shared, persistent understanding of your project.
 
 ---
 
-> [!TIP]
-> **View Full Documentation on GitHub**
-> For the complete documentation, interactive console guides, architecture details, and project updates, please visit the official [ideOS GitHub Repository](https://github.com/Abhishek-Jose7/ideOS).
+## The Scenario
 
----
+```text
+Friday    → Windsurf
+Saturday  → Cursor
+Monday    → Teammate
+Wednesday → New hire
 
-## The Core Concept
-
-When switching between different AI tools or collaborating on a team, context drift, duplicate effort, and credit exhaustion can disrupt momentum. 
-
-ideOS operates underneath your development environment to synchronize feature-centric progress. It collects file edits, git activities, and explicit checkpoints into a single state, exposing them as **Model Context Protocol (MCP)** resources and native editor rule definitions.
-
-```
-                  ┌───────────────────────────────┐
-                  │          ideOS Core           │
-                  │  (Local SQLite + Git Hooks)   │
-                  └───────────────┬───────────────┘
-                                  │
-                                  ▼
-                          ┌───────────────┐
-                          │  MCP Server   │
-                          └───────┬───────┘
-          ┌───────────────────────┼───────────────────────┐
-          ▼                       ▼                       ▼
-   Cursor Rules            Windsurf Rules             Zed Rules
- (Cursor/Claude)         (Windsurf/Cody)             (Zed/Trae)
+Nobody re-explains anything.
 ```
 
 ---
 
-## Key Pillars
+## Install
 
-* **Feature-Level Scope:** Groups tasks, files modified, and progress under distinct `feature_id` definitions rather than individual directories or files.
-* **Auto-Debounced Snapshots:** A background file watcher automatically captures progress checkpoints on file saves and git commits, ensuring zero-dependency recovery.
-* **Passive Rule Injection:** Automatically updates configuration rules (e.g. `.cursor/rules`, `.windsurf/rules`, `.ideos/context.md`) so that even offline/non-MCP tools stay aligned.
-* **Flexible Storage Backends:** Runs as a local SQLite database (`.ideos/db.sqlite`) for solo developers, with one-line configuration shifts to Cloudflare D1 for shared teams.
-
----
-
-## Command Reference
-
-### Setup & Health
-* `ideos init` — Setup directory integration, install post-commit hooks, and register IDE rules.
-* `ideos ides` — List all compatible IDE adapters and verify their configuration status.
-* `ideos detect` — Search local workstation for installed AI editors.
-* `ideos doctor` — Diagnose the health of the local SQLite workspace database.
-
-### Workflow Management
-* `ideos claim <feature>` — Claim ownership of a feature task for your active worker.
-* `ideos checkpoint <feature> --summary "..."` — Manually save progress (percentage, touched files, blockers, next steps).
-* `ideos done <feature>` — Mark a feature completed (100% progress).
-* `ideos current-work` — Auto-infer the active feature using active git branch and modified files.
-
-### Shared Decisions & Handoffs
-* `ideos remember <key> <value>` — Register a project decision (e.g. choice of package, pattern).
-* `ideos remember --prompt "..."` — Save a Groq-normalized natural language choice.
-* `ideos recall [key]` — Query stored decisions.
-* `ideos handoff <feature>` — Compile a structured, Groq-summarized handoff brief to transition the task.
-* `ideos timeline <feature>` — View an activity timeline of sessions, commits, and milestones.
-
----
-
-## Quick Start
-
-### 1. Installation
 Install ideOS globally:
 ```bash
 npm install -g ideos-cli
 ```
 
-### 2. Initialization
-Run the setup wizard within your git project root:
+---
+
+## Quick Start
+
 ```bash
+cd your-project
+git init
 ideos init
-```
-This detects installed editors, configures MCP settings, creates `.ideos/` database folders, and configures post-commit hooks.
-
-### 3. Claiming Features
-Mark your active task feature:
-```bash
-ideos claim feature-authentication
+ideos resume
 ```
 
-### 4. Running the Dashboard
-Open the interactive terminal dashboard to monitor concurrent worker activity, file overlaps, and project decisions:
-```bash
-ideos start
-```
+Running `ideos resume` launches your chosen IDE pre-loaded with active context:
 
----
-
-## File Structure
-
-Your project maintains the following footprint:
 ```text
-your-project/
-  .ideos/
-    db.sqlite             ← Local SQLite database (git-ignored)
-    exports/
-      features.json       ← Human-readable JSON snapshots (safe to commit)
-      decisions.json
-      checkpoints.json
-      sessions.json
-    AGENTS.md             ← Instructions loaded by MCP AI engines
-    context.md            ← Plain text state snapshot
-  .cursor/rules/          ← Generated adapter rules
-  .windsurf/rules/        ← Generated adapter rules
+$ ideos resume
+
+  Last session: Windsurf · 4h ago · 2h 14m
+
+  Feature: Authentication
+  ─────────────────────────────────────────
+  Progress:   60% complete
+  Done:       JWT signing, auth middleware, login endpoint
+  Remaining:  Refresh token rotation, auth tests
+  Blockers:   Refresh token rotation not started
+  Files:      auth/jwt.ts, middleware/auth.ts, types/auth.ts
+  Decisions:  RS256 over HS256 · stateless, no sessions
+
+  Other features:
+  ○ Dashboard UI     Cursor · Sarah · active now
+  ○ API Endpoints    unclaimed
+
+  Open in:
+  ❯ Cursor
+    Windsurf
+    KiloCode
 ```
 
 ---
 
-## Tech Stack
+## How It Works
 
-* **Runtime:** Node.js (ESM)
-* **Local Storage:** SQLite via `better-sqlite3`
-* **CLI Rendering:** React + Ink + `@inkjs/ui`
-* **File Watching:** Chokidar
-* **LLM Integration:** Groq SDK (`llama-3.3-70b-versatile`)
-* **Cloud Sync:** Cloudflare Workers + D1 database
+ideOS writes a `.ideos/` directory in your project. Every AI IDE connects to it via MCP. Your context, decisions, and progress are available in every IDE, every session.
 
 ---
 
-## License
+## Commands
 
-MIT © Abhishek Jose
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `ideos init` | Setup directory database, git hooks, and rules. | `ideos init` |
+| `ideos resume` | Continue a feature task or open your preferred IDE. | `ideos resume` |
+| `ideos start` | Open interactive console monitoring dashboard. | `ideos start` |
+| `ideos explain` | View deep feature status, workers, and decisions. | `ideos explain auth-system` |
+| `ideos timeline` | Print history of sessions and commits. | `ideos timeline auth-system` |
+| `ideos claim` | Set active feature ownership for this editor. | `ideos claim auth-system` |
+| `ideos checkpoint` | Record manual progress snapshot and description. | `ideos checkpoint auth-system --progress 60` |
+| `ideos remember` | Store a key-value or Groq-normalized project choice. | `ideos remember auth-strategy "JWT RS256"` |
+| `ideos recall` | Retrieve recorded project and feature decisions. | `ideos recall` |
+| `ideos current-work`| Auto-classify feature from active git branch and files. | `ideos current-work` |
+| `ideos handoff` | Synthesize a resume brief for other IDEs or teammates. | `ideos handoff auth-system` |
+| `ideos done` | Mark feature task as complete (100% progress). | `ideos done auth-system` |
+| `ideos doctor` | Run health checks on local database schema. | `ideos doctor` |
+| `ideos version` | Print package version. | `ideos version` |
+
+---
+
+## IDE Support
+
+| IDE | Free Tier | MCP Configuration | Status |
+| :--- | :--- | :--- | :--- |
+| **Cursor** | ✅ Yes | `.cursor/mcp.json` | Production |
+| **Windsurf** | ✅ Yes | `~/.codeium/windsurf/mcp_config.json` | Production |
+| **Zed** | ✅ Yes | `~/.config/zed/settings.json` | Production |
+| **Trae** | ✅ Yes | Built-in VS Code settings adapter | Production |
+| **Claude Code**| ◑ Partial | CLI tools adapter | Production |
+| **Continue** | ✅ Yes | `config.json` | Production |
+| **Cline** | ◑ BYOK | VS Code extension server settings | Production |
+| **Roo Code** | ◑ BYOK | VS Code extension server settings | Production |
+| **KiloCode** | ✅ Yes | settings.json | Production |
+| **JetBrains** | ❌ No | Community plugins | Preview |
+
+---
+
+## Groq Setup
+
+To enable natural language decision normalization and smart context summaries, configure your Groq key:
+
+```bash
+# Create .env in your project root
+GROQ_API_KEY=gsk_your_key_here
+```
+
+* **Where to get a key:** Create a free API key at the [Groq Console](https://console.groq.com/).
+* **Fallback behavior:** If no key is set, ideOS runs completely offline using local heuristics for context indexing.
+
+---
+
+## Cloud / Team Mode
+
+ideOS supports team workspaces using a Cloudflare D1 backend.
+
+```bash
+# Add to .env in your project root
+IDEOS_BACKEND=cloud
+IDEOS_WORKSPACE_URL=https://your-ideos-worker.your-subdomain.workers.dev
+```
+
+*For workers deployment and database migrations setups, refer to the [Cloud Setup documentation](https://github.com/Abhishek-Jose7/ideOS/blob/main/ideos-final.md#the-two-backends).*
+
+---
+
+## Contributing
+
+We welcome issues and pull requests to improve ideOS. To report bugs, request features, or contribute adapters, visit the [GitHub issues page](https://github.com/Abhishek-Jose7/ideOS/issues).
