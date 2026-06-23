@@ -1,315 +1,260 @@
 # ideOS
+### The Development Continuity Layer for AI-Assisted Software Development
 
-Development doesn't stop when you do.
+[![NPM Version](https://img.shields.io/npm/v/ideos-cli?color=indigo)](https://www.npmjs.com/package/ideos-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Support](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 
-ideOS is a development continuity layer for AI IDEs. It stores project memory by **feature**, not by task or file, so Cursor, Windsurf, Zed, Claude Code, Cline, Roo Code, Continue, Trae, Antigravity, Codex, QCoder, and other MCP-aware tools can resume the same work without re-explaining the project.
+ideOS is a developer infrastructure layer that coordinates multiple AI coding assistants (Claude Code, Cursor, Windsurf, Zed, Cline, Roo Code, Continue, Trae, Antigravity, Codex, QCoder) by providing shared memory, project intelligence, feature-level context, conflict prevention, and decision tracking.
 
-## What You Get
+---
 
-- An `ideos` CLI for setup, resume, explain, timeline, dashboard, checkpoints, decisions, and starting the MCP server.
-- Local SQLite storage in `.ideos/db.sqlite`.
-- Mergeable JSON exports in `.ideos/exports`.
-- Groq-powered feature inference, handoffs, and decision normalization.
-- Automatic file-save snapshots from the MCP server.
-- Git post-commit snapshots.
-- Optional Cloudflare Worker + D1 backend for teams.
+## Why ideOS?
 
-Feature is the top-level abstraction. Everything important hangs off `feature_id`.
+### The Problem
+Modern developers switch between multiple AI coding assistants sequentially (e.g. running out of credits) or use them simultaneously:
 
-## Requirements
-
-Install these first:
-
-```bash
-node --version
-npm --version
-git --version
+```
+Developer
+   │
+   ├── Cursor       ← thinks it owns auth.ts
+   ├── Windsurf     ← also editing auth.ts
+   ├── Zed          ← no idea what the others did yesterday
+   ├── Trae         ← about to introduce a circular dependency
+   └── Claude Code  ← duplicating work on tests
 ```
 
-Use Node.js 20 or newer.
+*Result: duplicated work, conflicting edits, forgotten context, and token-wasting re-indexing.*
 
-## Step-by-Step Setup Guide
+### The Solution
 
-Follow this end-to-end flow to get ideOS set up and running on your machine:
+```
+Developer
+    │
+    ▼
+  ideOS           ← shared continuity layer (.ideos/ + MCP)
+    │
+ ┌──┼─────────┐
+ ▼  ▼         ▼
+Cursor  Windsurf  Zed
+```
+*All agents share: Memory · Context · Feature Progress · Decisions · Active Sessions*
 
-### 1. Install Requirements
-Make sure you have Node.js (version 18 or newer), npm, and Git installed:
+---
+
+## Features & Core Pillars
+
+| Pillar | Description |
+| :--- | :--- |
+| **Feature-Centric Memory** | Tracks all progress, files, and tasks under a `feature_id` rather than raw files or task boards. |
+| **Agent Coordination** | Detects active workers and warns about potential editing overlaps or duplicate feature claims. |
+| **Multi-IDE Compatibility** | Unifies Cursor, Windsurf, Zed, Continue, Cline, Roo Code, Trae, Antigravity, and Claude Code under a single MCP server. |
+| **Passive Context Injection** | Regenerates rules (`.cursor/rules`, etc.), `.ideos/AGENTS.md`, and plain `.ideos/context.md` on every state change so non-cooperating models still stay updated. |
+| **Team Cloud Sync** | Syncs local SQLite states to an optional Cloudflare Workers + D1 backend for team collaboration. |
+
+---
+
+## Commands
+
+### Initialize & Info
+* `ideos init` — Runs the setup wizard to detect IDEs, configure MCP servers, create rules files, and install git hooks.
+* `ideos ides` — Lists all compatible IDE adapters and their setup status (`configured`, `detected`, or `available`).
+* `ideos detect` — Re-scans the host machine for installed AI IDEs.
+* `ideos doctor` — Validates the health of the local SQLite database and schema.
+
+### Feature Management
+* `ideos claim <feature>` — Claim ownership of a feature for the current active worker.
+* `ideos checkpoint <feature> --summary "..."` — Record a progress snapshot including progress percentages, files touched, blockers, and next steps.
+* `ideos done <feature> --summary "..."` — Mark a feature complete (progress to 100%).
+* `ideos current-work` — Auto-infers the likely active feature based on the git branch, recent commits, and modified files.
+
+### Shared Memory & Handoffs
+* `ideos remember <key> <value> [--feature id]` — Store durable decisions (e.g. choice of library).
+* `ideos remember --prompt "..."` — Store a Groq-normalized natural language decision.
+* `ideos recall [key]` — Retrieve recorded decisions.
+* `ideos handoff <feature>` — Groq-synthesized concise development handoff brief for transitioning work.
+* `ideos explain <feature>` — Deep status report of workers, checkpoints, decisions, and sessions.
+* `ideos timeline <feature>` — Interactive timeline replay of all activities associated with a feature.
+
+### Active Monitoring
+* `ideos start` — Launches the interactive terminal dashboard monitoring concurrent workers, claimed features, and decisions in real-time.
+* `ideos start --once` — Output a single dashboard snapshot for logging/CI purposes.
+* `ideos mcp` — Spawns the stdio Model Context Protocol (MCP) server child process.
+
+---
+
+## Quick Start
+
+### Prerequisites
+* **Node.js** `>= 18.0.0`
+* **npm** or **yarn**
+* **Git**
+
+### Installation
+Install the package globally from npm:
 ```bash
-node --version
-npm --version
-git --version
+npm install -g ideos-cli
 ```
 
-### 2. Install ideOS Globally
-Install the ideOS package globally on your machine so the `ideos` command is available anywhere:
-```bash
-# From the project root folder:
-npm install -g .
-```
+### Usage
 
-### 3. Set Up Environment Secrets
-Create a `.env` file in your project root containing your Groq API key:
-```bash
-# On macOS/Linux:
-cp .env.example .env
+1. **Initialize ideOS in your project root**:
+   ```bash
+   ideos init
+   ```
+   *(Accept the defaults to auto-detect and write configurations to Cursor, Windsurf, Zed, etc.)*
 
-# On Windows (cmd):
-copy .env.example .env
-```
-Edit `.env` and set:
-```bash
-GROQ_API_KEY=your_groq_api_key_here
-IDEOS_BACKEND=local
-```
-*(Do not commit `.env`. It is ignored on purpose. Optionally, set the key in your terminal session, e.g., in PowerShell: `$env:GROQ_API_KEY="your_groq_api_key_here"`)*
+2. **Set up your Groq API Key** (optional, for smart features/decision normalization):
+   Add to your `.env` file in the project root:
+   ```bash
+   GROQ_API_KEY=gsk_your_key_here
+   IDEOS_BACKEND=local
+   ```
 
-### 4. Initialize ideOS in Your Project
-Run the initialization wizard to create the local database, export folders, configure adapters, and set up git hooks:
-```bash
-# In your target project folder:
-ideos init
-```
-This wizard will:
-- Write Layer 1 (MCP configurations in target IDE folders).
-- Write Layer 2 (Rules files like `.cursor/rules`, `.windsurf/rules`, `.zed/rules`).
-- Write Layer 3 (`.ideos/AGENTS.md`) and Layer 4 (`.ideos/context.md`).
-- Install the git post-commit hook.
+3. **Claim your active feature**:
+   ```bash
+   ideos claim auth-system
+   ```
 
-To run the initialization non-interactively (e.g. in CI or scripts), use:
+4. **Launch your IDE and begin coding**:
+   ```bash
+   ideos resume
+   ```
+   *(Select your preferred IDE to launch the project pre-loaded with current context).*
+
+---
+
+## The Killer Demo
+
+### 1. Initialize and Claim Features
 ```bash
+# Initialize project-wide integration
 ideos init --yes
+
+# Team member Sarah claims UI layout in Cursor
+ideos claim dashboard-ui --ide cursor --name Sarah
+
+# You claim authorization in Windsurf
+ideos claim auth-system --ide windsurf --name Abhishek
 ```
 
-### 5. Verify IDE Configuration
-List all available, detected, and configured IDE adapters to check setup status:
+### 2. Capture Decisions & Progress Snapshots
 ```bash
-ideos ides
-```
-> [!WARNING]
-> While ideOS writes the configuration files successfully (marking them `configured`), it cannot verify that your IDE account is logged in. Open Cursor, Windsurf, Zed, and other IDEs at least once to confirm you are properly logged in and that the MCP server is initialized and enabled.
+# Record an engineering design decision
+ideos remember token-strategy "JWT RS256 stateless" --feature auth-system
 
-### 6. Resume and Open Your IDE
-Once you are ready to continue your development, run:
-```bash
-ideos resume
-```
-This command displays the feature status and prompts you to select which IDE you want to launch. Pressing Enter will automatically open the selected IDE for the current workspace folder!
-
-## Use The CLI
-
-Now that `ideos` is globally installed, you can use the `ideos` command directly:
-
-```bash
-ideos ides
-ideos current-work
-ideos claim authentication
-ideos checkpoint authentication --summary "JWT signing done" --progress 40 --files auth/jwt.ts
-ideos remember auth-strategy "JWT, RS256, stateless" --feature authentication
-ideos remember --prompt "For authentication we chose RS256 because multiple services need to verify tokens"
-ideos resume
-ideos explain authentication
-ideos timeline authentication
-ideos handoff authentication
-ideos start
-ideos start --once
+# Commit progress
+ideos checkpoint auth-system --summary "JWT signing middleware added" --progress 45 --files src/auth/jwt.ts
 ```
 
-`ideos start` is the interactive terminal dashboard. Use `ideos start --once` when you only want a single dashboard render for scripts or logs.
+### 3. Automatic Conflict Warnings
+If another teammate opens Cursor and starts editing files in the `src/auth/` directory, ideOS will detect the concurrent workspace overlap and warning banner on the dashboard:
+```
+$ ideos start --once
 
-## IDE Adapter Inventory
-
-Run:
-
-```bash
-ideos ides
+┌─ ideOS ─────────────────────────────── my-project ──────────┐
+│                                                              │
+│  Active                                                      │
+│  ● Windsurf   auth-system      (claimed)          3s        │
+│  ● Cursor     dashboard-ui     (claimed)          1m        │
+│                                                              │
+│  ⚠  Overlap: Windsurf + Cursor both near src/auth/           │
+│                                                              │
+│  Features                                                    │
+│  🔒 auth-system       Windsurf · 45%    in progress         │
+│  🔒 dashboard-ui      Cursor · 20%      in progress         │
+│                                                              │
+│  Decisions                                                   │
+│  token-strategy → JWT, RS256, stateless                      │
+│                                                              │
+│  [e] explain  [t] timeline  [r] resume  [q] quit            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-It shows every supported adapter:
+### 4. Review Full Reasoning & Replay Timeline
+When resuming the next morning, query the timeline to see what happened:
+```
+$ ideos timeline auth-system
 
-- Cursor
-- Windsurf
-- KiloCode
-- Codex
-- Trae
-- Antigravity
-- Continue
-- Cline
-- Roo Code
-- Claude Code
-- Zed
-- QCoder
+  auth-system · Development Timeline
 
-Statuses mean:
-
-- `configured`: ideOS wrote and verified the adapter config file.
-- `detected`: ideOS found an IDE folder but has not configured ideOS there yet.
-- `available`: ideOS knows how to configure it, but it was not detected.
-
-Warning/Notice: configured means ideOS wrote/verified adapter files. It does NOT guarantee that the IDE is logged in or initialized. You must manually open each IDE once and verify that you are properly logged in and that the MCP server is initialized and enabled.
-
-## MCP Tools
-
-ideOS exposes:
-
-- `ideos_workspace`
-- `ideos_current_work`
-- `ideos_claim`
-- `ideos_remember`
-- `ideos_recall`
-- `ideos_checkpoint`
-- `ideos_handoff`
-- `ideos_done`
-- `ideos_heartbeat`
-
-The IDE config points at:
-
-```json
-{
-  "mcpServers": {
-    "ideos": {
-      "command": "npx",
-      "args": ["-y", "ideos-cli", "mcp"],
-      "env": {
-        "IDEOS_WORKSPACE": "${workspaceFolder}/.ideos"
-      }
-    }
-  }
-}
+  Mon Jun 22
+  09:00  Windsurf · Abhishek    session started
+  10:15  ─ decision             token-strategy
+  10:30  ─ checkpoint           JWT signing middleware added
+  11:00  ─ session ended        2h 00m
 ```
 
-When an IDE spawns `ideos mcp`, ideOS also starts a file-save watcher. Saves update `last_file_activity`. After 30 seconds of quiet, ideOS writes a `file_watch` checkpoint and re-exports JSON.
+---
 
-## Git Hook Verification
+## Architecture
 
-ideOS installs `.git/hooks/post-commit`.
-
-Verify manually:
-
-```bash
-ideos checkpoint --auto --source git_hook
-ideos recall
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         ideOS Core                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌───────────────┐     ┌───────────────┐     ┌─────────────┐│
+│  │ File Watcher  │────▶│ SQLite DB     │◀────│ Git Hooks   ││
+│  │  (chokidar)   │     │  (.ideos/db)  │     │(post-commit)││
+│  └───────────────┘     └───────────────┘     └─────────────┘│
+│                                │                            │
+│                                ▼                            │
+│                        ┌───────────────┐                    │
+│                        │  MCP Server   │                    │
+│                        │    (stdio)    │                    │
+│                        └───────────────┘                    │
+│                                │                            │
+└─────────────────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+                         ┌───────────────┐
+                         │   ideos CLI   │
+                         └───────────────┘
+                                 │
+                 ┌───────────────┼───────────────┐
+                 ▼               ▼               ▼
+              Cursor          Windsurf          Zed
 ```
 
-Verify through Git:
+### Data Storage
 
-```bash
-git -c user.name="ideOS Hook Test" -c user.email="ideos-hook-test@example.invalid" commit --allow-empty -m "verify ideos git hook"
-ideos timeline unclassified-work
-```
-
-The hook should:
-
-- Write a `git_hook` checkpoint.
-- Re-export `.ideos/exports/checkpoints.json`.
-- Update `workers.last_git_activity` for `git:post-commit`.
-
-## Groq Integration
-
-Set:
-
-```bash
-GROQ_API_KEY=your_groq_api_key_here
-```
-
-Groq powers:
-
-- `ideos_current_work`: classifies branch and file signals into a feature.
-- `ideos_handoff`: classifies and synthesizes a resume brief.
-- `ideos_remember --prompt`: turns natural language into a stable decision key, value, and optional `feature_id`.
-
-If `GROQ_API_KEY` is missing, ideOS still works with local fallbacks, but prompt-only decision capture requires Groq.
-
-## Local State
-
+Local files are written directly into the project workspace:
 ```text
-.ideos/
-  db.sqlite
-  exports/
-    features.json
-    decisions.json
-    checkpoints.json
-    sessions.json
-  AGENTS.md
-  context.md
+your-project/
+  .ideos/
+    db.sqlite             ← Local SQLite database (git-ignored)
+    exports/
+      features.json       ← Human-readable JSON dumps (safe to commit)
+      decisions.json
+      checkpoints.json
+      sessions.json
+    AGENTS.md             ← Passive continuity instructions for AI agents
+    context.md            ← plain text state description
 ```
 
-`db.sqlite` is ignored. JSON exports and markdown context are safe to commit.
+Rules files created under IDE folders allow models to pick up parameters:
+* `.cursor/rules`
+* `.windsurf/rules`
+* `.zed/rules`
 
-## Cloud Backend
+---
 
-Cloud mode uses:
+## Tech Stack
 
-- Cloudflare Worker in `cloud/worker.js`.
-- D1 database with migrations in `migrations/`.
-- HTTP JSON endpoints plus `/events` for SSE.
-- `IDEOS_BACKEND=cloud` and `IDEOS_WORKSPACE_URL` to switch CLI/MCP storage to cloud.
+| Component | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Runtime** | Node.js (ESM) | CLI executor and server runner |
+| **CLI Framework** | React + Ink + `@inkjs/ui` | Interactive console rendering |
+| **Local Database** | SQLite (`better-sqlite3`) | Fast workspace transactions |
+| **Code Watching** | Chokidar | File alteration change triggers |
+| **Smart Layer** | Groq SDK (`llama-3.3-70b-versatile`) | Natural language normalization & handoffs |
+| **Cloud Sync** | Cloudflare Workers + D1 Database | Team backend deployment |
 
-Install Wrangler:
+---
 
-```bash
-npm install
-npx wrangler --version
-```
+## Documentation
 
-Log in:
-
-```bash
-npx wrangler login
-```
-
-Create D1:
-
-```bash
-npx wrangler d1 create ideos-cloud
-```
-
-Copy the returned `database_id` into `wrangler.jsonc`.
-
-Apply migrations locally:
-
-```bash
-npx wrangler d1 migrations apply ideos-cloud --local
-```
-
-Apply migrations remotely:
-
-```bash
-npx wrangler d1 migrations apply ideos-cloud --remote
-```
-
-Set the Groq secret for the Worker:
-
-```bash
-npx wrangler secret put GROQ_API_KEY
-```
-
-Deploy:
-
-```bash
-npx wrangler deploy
-```
-
-Set your local environment:
-
-```powershell
-$env:IDEOS_BACKEND="cloud"
-$env:IDEOS_WORKSPACE_URL="https://your-ideos-worker.your-subdomain.workers.dev"
-```
-
-Verify:
-
-```bash
-ideos doctor
-ideos current-work
-ideos checkpoint authentication --summary "Cloud checkpoint works"
-ideos resume
-```
-
-## Test The Package
-
-```bash
-npm run smoke
-npm pack --dry-run
-```
-
-The smoke test creates a fresh temporary project, runs init/checkpoint/remember/resume/timeline, starts the MCP server, lists tools, and calls `ideos_workspace`.
+* **Product Requirements:** [ideos-final.md](file:///c:/ideos/ideos-final.md)
+* **API & System Context:** [.ideos/context.md](file:///c:/ideos/.ideos/context.md)
+* **Agent Guidelines:** [.ideos/AGENTS.md](file:///c:/ideos/.ideos/AGENTS.md)
