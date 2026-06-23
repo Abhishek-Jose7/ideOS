@@ -27,6 +27,11 @@ try {
 }
 
 async function main() {
+  if (args.includes('--version') || args.includes('-v') || command === 'version') {
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    console.log(`ideos v${pkg.version}`)
+    return
+  }
   switch (command) {
     case 'init':
       await init()
@@ -539,7 +544,8 @@ function help() {
     '  ideos detect                               Scan laptop for installed IDEs & extensions',
     '  ideos mcp                                  Start the MCP server (stdio)',
     '  ideos done <feature> --summary "..."       Mark a feature complete',
-    '  ideos doctor                               Validate local ideOS state'
+    '  ideos doctor                               Validate local ideOS state',
+    '  ideos version                              Show version'
   ]
   for (const line of lines) {
     console.log(line)

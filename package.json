@@ -1,6 +1,6 @@
 {
   "name": "ideos-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Development continuity layer for AI IDEs.",
   "type": "module",
   "bin": {
