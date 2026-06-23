@@ -2,7 +2,7 @@
 
 ### Your project memory, across every IDE.
 
-**ideOS** is a development continuity layer that gives Cursor, Windsurf, Zed, Claude Code, and Trae a shared, persistent understanding of your project.
+**ideOS** is a development continuity layer that gives Cursor, Windsurf, Zed, Claude Code, Antigravity, and Trae a shared, persistent understanding of your project.
 
 ---
 
@@ -107,6 +107,7 @@ ideOS writes a `.ideos/` directory in your project. Every AI IDE connects to it 
 | **Cline** | ◑ BYOK | VS Code extension server settings | Production |
 | **Roo Code** | ◑ BYOK | VS Code extension server settings | Production |
 | **KiloCode** | ✅ Yes | settings.json | Production |
+| **Antigravity** | ✅ Yes | `.antigravity/mcp.json` | Production |
 | **JetBrains** | ❌ No | Community plugins | Preview |
 
 ---

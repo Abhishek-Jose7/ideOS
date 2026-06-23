@@ -444,6 +444,34 @@ export const adapters = [
     verify(root) {
       return Boolean(readJson(this.configPath(root), {})?.mcpServers?.ideos)
     }
+  },
+  {
+    name: 'Antigravity',
+    id: 'antigravity',
+    transport: 'stdio',
+    configPath: (root) => path.join(root, '.antigravity', 'mcp.json'),
+    rulesPath: (root) => path.join(root, '.antigravity', 'rules.md'),
+    detect(root) {
+      return this.detectSystem() && (fs.existsSync(path.join(root, '.antigravity')) || fs.existsSync(this.configPath(root)))
+    },
+    detectSystem() {
+      if (isBinaryInPath('antigravity')) return true
+      if (process.platform === 'win32') {
+        return checkWinAppPaths('Antigravity', ['Antigravity.exe', 'antigravity.exe']) ||
+               checkWinAppPaths('Antigravity IDE', ['Antigravity.exe', 'antigravity.exe'])
+      }
+      if (process.platform === 'darwin') {
+        return fs.existsSync('/Applications/Antigravity.app') || fs.existsSync('/Applications/Antigravity IDE.app')
+      }
+      return false
+    },
+    install(root, config = {}) {
+      mergeMcpConfig(this.configPath(root), root, config)
+      writeRules(this.rulesPath(root))
+    },
+    verify(root) {
+      return Boolean(readJson(this.configPath(root), {})?.mcpServers?.ideos)
+    }
   }
 ]
 
