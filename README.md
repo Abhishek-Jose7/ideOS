@@ -8,14 +8,16 @@
 
 ## The Scenario
 
-```text
-Friday    → Windsurf
-Saturday  → Cursor
-Monday    → Teammate
-Wednesday → New hire
+### The Problem
+You are building a feature in **Cursor**. After a few hours of intense debugging, you hit your daily fast request credit limit. You switch to **Windsurf** to keep working, but Windsurf has no idea what you just did, what decisions you made, or which files were changed. You spend 15 minutes copying logs, pasting code snippets, and re-explaining the context to the AI—wasting both time and tokens.
 
-Nobody re-explains anything.
-```
+### The Solution
+With **ideOS** running in the background:
+1. You close Cursor.
+2. You open Windsurf and run `ideos resume`.
+3. The IDE launches pre-loaded with the exact feature progress, touched files, design decisions, and blockers.
+
+The AI picks up right where you left off. **Nobody re-explains anything.**
 
 ---
 
