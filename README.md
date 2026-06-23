@@ -1,12 +1,14 @@
 # ideOS
 
-### Development continuity layer for AI-assisted software engineering.
+### Development doesn't stop when you do.
 
 [![NPM Version](https://img.shields.io/npm/v/ideos-cli?color=indigo)](https://www.npmjs.com/package/ideos-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Support](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-green.svg)](https://nodejs.org/)
 
-ideOS bridges context across AI coding assistants (such as Cursor, Windsurf, Zed, Claude Code, Trae, Cline, and Roo Code) by establishing a local and cloud-compatible project memory layer. It preserves active features, key design decisions, session histories, and file-watching checkpoints so that developer tools can resume work seamlessly without duplicating work or losing structural context.
+ideOS is a development continuity layer. It lives in your project directory and gives every AI editor (Cursor, Windsurf, Zed, Claude Code, Trae, etc.) — running simultaneously or used sequentially — a shared, persistent understanding of the project.
+
+It is not an IDE. It is not an AI agent. It is not a task board. It is the memory layer underneath all of them.
 
 ---
 
