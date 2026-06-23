@@ -6,8 +6,8 @@ import { inferFeature } from './infer.js'
 import { rel } from './paths.js'
 import { nowIso } from './time.js'
 
-export function startFileWatcher(root, { ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' } = {}) {
-  if (process.env.SCAR_WATCH === '0') return null
+export function startFileWatcher(root, { ide = process.env.IDEOS_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' } = {}) {
+  if (process.env.IDEOS_WATCH === '0') return null
   debug(`watching ${root}`)
   const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
   const touched = new Set()
@@ -17,7 +17,7 @@ export function startFileWatcher(root, { ide = process.env.SCAR_IDE || 'mcp', na
     ignored: [
       /(^|[/\\])\.git([/\\]|$)/,
       /(^|[/\\])node_modules([/\\]|$)/,
-      /(^|[/\\])\.scar([/\\]|$)/,
+      /(^|[/\\])\.ideos([/\\]|$)/,
       /(^|[/\\])\.wrangler([/\\]|$)/
     ],
     awaitWriteFinish: { stabilityThreshold: 700, pollInterval: 100 }
@@ -100,5 +100,5 @@ function checkpointFileActivity(root, workerId, touched) {
 }
 
 function debug(message) {
-  if (process.env.SCAR_WATCH_DEBUG === '1') console.error(`[scar-watch] ${message}`)
+  if (process.env.IDEOS_WATCH_DEBUG === '1') console.error(`[ideos-watch] ${message}`)
 }

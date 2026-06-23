@@ -6,9 +6,9 @@ export function workerStatus(worker, now = Date.now()) {
 }
 
 export function statusMark(status) {
-  if (status === 'active') return 'A'
-  if (status === 'likely_active') return '~'
-  return '-'
+  if (status === 'active') return '●'
+  if (status === 'likely_active') return '◑'
+  return '○'
 }
 
 function within(value, ms, now) {

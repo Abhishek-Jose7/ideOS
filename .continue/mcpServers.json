@@ -1,13 +1,14 @@
 {
   "mcpServers": {
-    "scar": {
+    "ideos": {
       "command": "npx",
       "args": [
         "-y",
-        "scar-mcp"
+        "ideos",
+        "mcp"
       ],
       "env": {
-        "SCAR_WORKSPACE": "${workspaceFolder}/.scar"
+        "IDEOS_WORKSPACE": "${workspaceFolder}/.ideos"
       }
     }
   }

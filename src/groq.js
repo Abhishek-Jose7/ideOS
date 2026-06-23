@@ -1,5 +1,5 @@
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MODEL = process.env.SCAR_GROQ_MODEL || 'llama-3.3-70b-versatile'
+const MODEL = process.env.IDEOS_GROQ_MODEL || 'llama-3.3-70b-versatile'
 
 export function hasGroq() {
   return Boolean(process.env.GROQ_API_KEY)
@@ -62,7 +62,7 @@ export async function normalizeDecision({ prompt, key, value, feature, features 
   return groqJson({
     fallback: key && value ? { key, value, feature } : null,
     system: [
-      'You normalize durable engineering decisions for Scar.',
+      'You normalize durable engineering decisions for ideOS.',
       'Feature is the top-level abstraction. If a decision belongs to a feature, return that feature id; otherwise null.',
       'Return JSON only: {"key":"short-stable-key","value":"clear decision value","feature":"feature-id-or-null"}'
     ].join('\n'),

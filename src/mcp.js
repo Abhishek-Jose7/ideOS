@@ -13,53 +13,53 @@ import { renderExplain, renderHandoff, renderResume, findFeature, featureSummary
 import { startFileWatcher } from './watcher.js'
 import { nowIso } from './time.js'
 
-const workspace = process.env.SCAR_WORKSPACE
+const workspace = process.env.IDEOS_WORKSPACE
 const root = workspace ? path.resolve(workspace, '..') : process.cwd()
 
 const server = new McpServer({
-  name: 'scar',
+  name: 'ideos',
   version: '0.1.0'
 })
 
 startFileWatcher(root)
 
 server.registerResource(
-  'scar-context',
-  'scar://context',
+  'ideos-context',
+  'ideos://context',
   {
-    title: 'Scar Workspace Context',
+    title: 'ideOS Workspace Context',
     description: 'Current feature-centric project continuity state',
     mimeType: 'text/markdown'
   },
   async () => withStore((store) => ({
-    contents: [{ uri: 'scar://context', mimeType: 'text/markdown', text: renderResume(store) }]
+    contents: [{ uri: 'ideos://context', mimeType: 'text/markdown', text: renderResume(store) }]
   }))
 )
 
 server.registerResource(
-  'scar-decisions',
-  'scar://decisions',
+  'ideos-decisions',
+  'ideos://decisions',
   {
-    title: 'Scar Workspace Decisions',
+    title: 'ideOS Workspace Decisions',
     description: 'Engineering decisions recorded in this project',
     mimeType: 'application/json'
   },
   async () => withStore((store) => {
     const decisions = store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all()
     return {
-      contents: [{ uri: 'scar://decisions', mimeType: 'application/json', text: JSON.stringify(decisions, null, 2) }]
+      contents: [{ uri: 'ideos://decisions', mimeType: 'application/json', text: JSON.stringify(decisions, null, 2) }]
     }
   })
 )
 
 server.registerResource(
-  'scar-feature-detail',
-  new ResourceTemplate('scar://feature/{id}', {
+  'ideos-feature-detail',
+  new ResourceTemplate('ideos://feature/{id}', {
     list: async () => withStore((store) => {
       const features = store.db.prepare('SELECT * FROM features').all()
       return {
         resources: features.map((feature) => ({
-          uri: `scar://feature/${feature.id}`,
+          uri: `ideos://feature/${feature.id}`,
           name: feature.name,
           mimeType: 'text/markdown'
         }))
@@ -67,7 +67,7 @@ server.registerResource(
     })
   }),
   {
-    title: 'Scar Feature Detail',
+    title: 'ideOS Feature Detail',
     description: 'Detailed explanation of a specific feature'
   },
   async (uri, variables) => withStore((store) => {
@@ -79,9 +79,9 @@ server.registerResource(
 )
 
 server.registerTool(
-  'scar_workspace',
+  'ideos_workspace',
   {
-    title: 'Scar workspace',
+    title: 'ideOS workspace',
     description: 'Return full project state from this IDE perspective.',
     inputSchema: {}
   },
@@ -96,9 +96,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_current_work',
+  'ideos_current_work',
   {
-    title: 'Scar current work',
+    title: 'ideOS current work',
     description: 'Infer likely feature from branch, recent files, and known features.',
     inputSchema: {}
   },
@@ -109,9 +109,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_claim',
+  'ideos_claim',
   {
-    title: 'Scar claim',
+    title: 'ideOS claim',
     description: 'Claim a feature after suggestion is confirmed.',
     inputSchema: {
       feature: z.string(),
@@ -119,7 +119,7 @@ server.registerTool(
       name: z.string().optional()
     }
   },
-  async ({ feature, ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' }) => {
+  async ({ feature, ide = process.env.IDEOS_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer' }) => {
     if (useCloudBackend()) return cloudCall('/tool/claim', { method: 'POST', body: { feature, ide, name } }).then(json)
     return withStore(async (store) => {
       const row = ensureFeature(store, feature)
@@ -142,9 +142,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_remember',
+  'ideos_remember',
   {
-    title: 'Scar remember',
+    title: 'ideOS remember',
     description: 'Store a decision, optionally scoped to a feature.',
     inputSchema: {
       key: z.string().optional(),
@@ -160,7 +160,7 @@ server.registerTool(
     const normalized = await normalizeDecision({ prompt, key, value, feature, features })
     const finalKey = normalized?.key || key
     const finalValue = normalized?.value || value
-    if (!finalKey || !finalValue) return json({ error: 'scar_remember needs key/value or a prompt that Groq can normalize.' })
+    if (!finalKey || !finalValue) return json({ error: 'ideos_remember needs key/value or a prompt that Groq can normalize.' })
     const targetFeature = normalized?.feature || feature
     const target = targetFeature ? ensureFeature(store, targetFeature) : null
     store.db.prepare('INSERT INTO decisions (id, feature_id, key, value, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -172,9 +172,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_recall',
+  'ideos_recall',
   {
-    title: 'Scar recall',
+    title: 'ideOS recall',
     description: 'Retrieve decisions.',
     inputSchema: {
       key: z.string().optional(),
@@ -195,9 +195,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_checkpoint',
+  'ideos_checkpoint',
   {
-    title: 'Scar checkpoint',
+    title: 'ideOS checkpoint',
     description: 'Save a progress snapshot under a feature_id.',
     inputSchema: {
       feature: z.string(),
@@ -219,9 +219,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_handoff',
+  'ideos_handoff',
   {
-    title: 'Scar handoff',
+    title: 'ideOS handoff',
     description: 'Return a structured feature brief for resuming work.',
     inputSchema: { feature: z.string() }
   },
@@ -232,9 +232,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_done',
+  'ideos_done',
   {
-    title: 'Scar done',
+    title: 'ideOS done',
     description: 'Mark a feature complete.',
     inputSchema: {
       feature: z.string(),
@@ -253,9 +253,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_heartbeat',
+  'ideos_heartbeat',
   {
-    title: 'Scar heartbeat',
+    title: 'ideOS heartbeat',
     description: 'Update heartbeat for a cooperating IDE.',
     inputSchema: {
       ide: z.string().optional(),
@@ -263,7 +263,7 @@ server.registerTool(
       feature: z.string().optional()
     }
   },
-  async ({ ide = process.env.SCAR_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer', feature } = {}) => {
+  async ({ ide = process.env.IDEOS_IDE || 'mcp', name = process.env.USERNAME || process.env.USER || 'developer', feature } = {}) => {
     if (useCloudBackend()) return json(await cloudCall('/tool/heartbeat', { method: 'POST', body: { ide, name, feature } }))
     return withStore((store) => {
     const target = feature ? ensureFeature(store, feature) : null
@@ -280,9 +280,9 @@ server.registerTool(
 )
 
 server.registerTool(
-  'scar_explain',
+  'ideos_explain',
   {
-    title: 'Scar explain',
+    title: 'ideOS explain',
     description: 'Explain detailed status, active workers, checkpoints, and decisions for a feature.',
     inputSchema: {
       feature: z.string()

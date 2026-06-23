@@ -1,13 +1,13 @@
 {
-  "name": "scar",
+  "name": "ideos-cli",
   "version": "0.1.0",
   "description": "Development continuity layer for AI IDEs.",
   "type": "module",
   "bin": {
-    "scar": "./src/cli.js"
+    "ideos": "./src/cli.js"
   },
   "scripts": {
-    "scar": "node ./src/cli.js",
+    "ideos": "node ./src/cli.js",
     "mcp": "node ./src/cli.js mcp",
     "check": "node ./src/cli.js doctor",
     "demo": "node ./src/cli.js init --yes && node ./src/cli.js seed-demo && node ./src/cli.js resume",

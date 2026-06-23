@@ -1,4 +1,4 @@
-# Scar
+# ideOS
 
 ### Development doesn't stop when you do.
 
@@ -15,7 +15,7 @@ Nobody re-explains anything.
 
 ## What It Is
 
-Scar is a development continuity layer. It lives in your project directory and gives every AI IDE — running simultaneously or used sequentially — a shared, persistent understanding of the project.
+ideOS is a development continuity layer. It lives in your project directory and gives every AI IDE — running simultaneously or used sequentially — a shared, persistent understanding of the project.
 
 It is not an IDE. It is not an AI agent. It is not a task board.
 It is the memory layer underneath all of them.
@@ -27,10 +27,10 @@ It is the memory layer underneath all of them.
 ### First time in a project
 
 ```
-$ scar init
+$ ideos init
 
   ┌──────────────────────────────────────────┐
-  │  Scar — Development continuity.         │
+  │  ideOS — Development continuity.         │
   └──────────────────────────────────────────┘
 
   ? How do you primarily work?
@@ -48,7 +48,7 @@ $ scar init
   ? Where should state live?
     ❯ Local     just me, this machine
       Cloud     team or multiple machines
-                (needs a Scar workspace URL)
+                (needs an ideOS workspace URL)
 
   Connecting...
   ✓ Windsurf    installed · verified
@@ -57,9 +57,9 @@ $ scar init
   ✓ Git hooks installed
   ✓ Context files written
 
-  scar resume     → continue where you left off
-  scar start      → open dashboard
-  scar explain    → understand current project state
+  ideos resume     → continue where you left off
+  ideos start      → open dashboard
+  ideos explain    → understand current project state
 ```
 
 Run once. Never again.
@@ -69,7 +69,7 @@ Run once. Never again.
 ### Resuming work
 
 ```
-$ scar resume
+$ ideos resume
 
   Last session: Windsurf · 4h ago · 2h 14m
 
@@ -101,7 +101,7 @@ The chosen IDE opens with this context pre-loaded. The AI continues immediately.
 ### Understanding a feature
 
 ```
-$ scar explain authentication
+$ ideos explain authentication
 
   Feature: Authentication
   Status:  In Progress · 60%
@@ -137,7 +137,7 @@ $ scar explain authentication
 ### Feature timeline
 
 ```
-$ scar timeline authentication
+$ ideos timeline authentication
 
   Authentication · Development Timeline
 
@@ -165,9 +165,9 @@ All data already exists from sessions, checkpoints, and decisions. Timeline is a
 ### Parallel mode dashboard
 
 ```
-$ scar start
+$ ideos start
 
-┌─ Scar ──────────────────────────────── my-project ──────────┐
+┌─ ideOS ─────────────────────────────── my-project ──────────┐
 │                                                              │
 │  Active                                                      │
 │  ● Windsurf   authentication   (inferred 94%)    8s        │
@@ -208,7 +208,7 @@ Binary active/inactive breaks when IDEs don't send heartbeats. Three-state handl
 
 ```
 your-project/
-  .scar/
+  .ideos/
     db.sqlite             ← local only, .gitignored
     exports/
       features.json       ← committed to git
@@ -216,29 +216,29 @@ your-project/
       checkpoints.json    ← committed to git
       sessions.json       ← committed to git
     AGENTS.md             ← committed to git
-  .cursor/rules           ← written by scar init
-  .windsurf/rules         ← written by scar init
+  .cursor/rules           ← written by ideos init
+  .windsurf/rules         ← written by ideos init
 ```
 
-`db.sqlite` is never committed. Binary files cannot be merged in git. Instead, Scar exports human-readable JSON on every state change. Git merges JSON cleanly. When a teammate clones the repo and runs `scar init`, it reads `exports/` and hydrates a fresh local database instantly.
+`db.sqlite` is never committed. Binary files cannot be merged in git. Instead, ideOS exports human-readable JSON on every state change. Git merges JSON cleanly. When a teammate clones the repo and runs `ideos init`, it reads `exports/` and hydrates a fresh local database instantly.
 
 ### How IDEs Connect
 
-`scar init` writes a config snippet into each detected IDE's config file. The format is identical across all IDEs — only the file path differs:
+`ideos init` writes a config snippet into each detected IDE's config file. The format is identical across all IDEs — only the file path differs:
 
 ```json
 {
   "mcpServers": {
-    "scar": {
+    "ideos": {
       "command": "npx",
-      "args": ["-y", "scar-mcp"],
-      "env": { "SCAR_WORKSPACE": "${workspaceFolder}/.scar" }
+      "args": ["-y", "ideos-cli", "mcp"],
+      "env": { "IDEOS_WORKSPACE": "${workspaceFolder}/.ideos" }
     }
   }
 }
 ```
 
-Each IDE spawns `npx scar-mcp` as a child process on demand. No background daemon. No port. Nothing running unless an IDE needs it. All IDE instances — open simultaneously or used days apart — hit the same `.scar/db.sqlite`.
+Each IDE spawns `npx ideos-cli mcp` as a child process on demand. No background daemon. No port. Nothing running unless an IDE needs it. All IDE instances — open simultaneously or used days apart — hit the same `.ideos/db.sqlite`.
 
 ### IDE Adapters
 
@@ -249,16 +249,16 @@ interface IDEAdapter {
   name: string
   transport: 'stdio' | 'sse'
   detect(): Promise<boolean>
-  install(config: ScarConfig): Promise<void>
+  install(config: ideOSConfig): Promise<void>
   verify(): Promise<boolean>
 }
 ```
 
-`scar init` runs detect → install → verify for each adapter. If verify fails, it tells you exactly what went wrong. Not a silent failure.
+`ideos init` runs detect → install → verify for each adapter. If verify fails, it tells you exactly what went wrong. Not a silent failure.
 
 ### Context Injection — Four Layers
 
-AGENTS.md is not a guaranteed protocol. Some IDEs follow it. Some partially follow it. Some ignore it. Scar writes four layers and assumes any combination of them might work:
+AGENTS.md is not a guaranteed protocol. Some IDEs follow it. Some partially follow it. Some ignore it. ideOS writes four layers and assumes any combination of them might work:
 
 ```
 Layer 1: MCP Resources
@@ -267,22 +267,22 @@ Layer 1: MCP Resources
 
 Layer 2: Per-IDE rules files
          .cursor/rules, .windsurf/rules, .zed/rules
-         Written directly by scar init.
+         Written directly by ideos init.
          IDE reads them natively, no AI needed.
 
-Layer 3: .scar/AGENTS.md
-         Instructions for the AI: call scar_workspace() at start,
-         scar_heartbeat() every 60s, etc.
+Layer 3: .ideos/AGENTS.md
+         Instructions for the AI: call ideos_workspace() at start,
+         ideos_heartbeat() every 60s, etc.
          Best effort — works when IDE cooperates.
 
-Layer 4: .scar/context.md
+Layer 4: .ideos/context.md
          Regenerated on every state change.
          Plain markdown snapshot of current project state.
          Passive fallback — even if nothing else works,
          a developer can paste this into any AI manually.
 ```
 
-Scar works even if the AI never calls a single MCP tool. Continuity is guaranteed at the file level. MCP cooperation makes it richer and more automatic.
+ideOS works even if the AI never calls a single MCP tool. Continuity is guaranteed at the file level. MCP cooperation makes it richer and more automatic.
 
 ### Snapshots — Automatic, No AI Needed
 
@@ -292,7 +292,7 @@ Two triggers that require zero AI cooperation:
 
 **Git post-commit hook:** Richer snapshot on every commit. Includes diff. Both triggers write to the checkpoints table and re-export JSON.
 
-Explicit `scar_checkpoint()` from the AI is additive — richer content, better summaries — but never the only mechanism.
+Explicit `ideos_checkpoint()` from the AI is additive — richer content, better summaries — but never the only mechanism.
 
 ### Heartbeat — Three Signal Sources
 
@@ -315,10 +315,10 @@ Heartbeat is one signal, not the only signal. File watcher and git hook update `
 ```
 Local (default):
   Transport:  stdio
-  Storage:    .scar/db.sqlite
+  Storage:    .ideos/db.sqlite
   For:        solo, one machine
 
-Cloud (set SCAR_BACKEND=cloud + SCAR_WORKSPACE_URL=...):
+Cloud (set IDEOS_BACKEND=cloud + IDEOS_WORKSPACE_URL=...):
   Transport:  HTTP SSE
   Storage:    Cloudflare D1
   For:        teams, multiple machines
@@ -332,7 +332,7 @@ Same MCP tools. Same schema. Same everything. One environment variable switches 
 
 What every connected IDE gets. Called by the AI during sessions.
 
-**`scar_workspace()`**
+**`ideos_workspace()`**
 Called at session start. Returns full project state from this IDE's perspective.
 ```json
 {
@@ -344,7 +344,7 @@ Called at session start. Returns full project state from this IDE's perspective.
 }
 ```
 
-**`scar_current_work()`**
+**`ideos_current_work()`**
 Infers what the IDE is working on without explicit claiming. Reads git branch, recently modified files, last checkpoint. One Groq call classifies these into a feature. Returns a suggestion, not an auto-claim.
 ```json
 {
@@ -355,25 +355,25 @@ Infers what the IDE is working on without explicit claiming. Reads git branch, r
 }
 ```
 
-**`scar_claim(feature)`**
+**`ideos_claim(feature)`**
 Claim a feature after suggestion is confirmed. Returns conflict info if already claimed.
 
-**`scar_remember(key, value, feature?)`**
+**`ideos_remember(key, value, feature?)`**
 Store a decision, optionally scoped to a feature.
 
-**`scar_recall(key?, feature?)`**
+**`ideos_recall(key?, feature?)`**
 Retrieve decisions. No args returns everything.
 
-**`scar_checkpoint(feature)`**
+**`ideos_checkpoint(feature)`**
 Explicit progress snapshot. AI fills summary, files touched, blockers, next steps.
 
-**`scar_handoff(feature)`**
-Groq synthesizes all feature state into a structured brief. Used internally by `scar resume`.
+**`ideos_handoff(feature)`**
+Groq synthesizes all feature state into a structured brief. Used internally by `ideos resume`.
 
-**`scar_done(feature, summary)`**
+**`ideos_done(feature, summary)`**
 Mark feature complete.
 
-**`scar_heartbeat()`**
+**`ideos_heartbeat()`**
 Called every 60s by cooperating IDEs. One of three worker activity signals.
 
 ---
@@ -382,9 +382,9 @@ Called every 60s by cooperating IDEs. One of three worker activity signals.
 
 | Where | Input | Output |
 |---|---|---|
-| `scar_current_work()` | branch name + recent files + feature list | feature classification + confidence |
-| `scar_handoff()` | all feature state | structured resume brief |
-| `scar_claim()` — duplicate check | new claim + existing features | semantic similarity score |
+| `ideos_current_work()` | branch name + recent files + feature list | feature classification + confidence |
+| `ideos_handoff()` | all feature state | structured resume brief |
+| `ideos_claim()` — duplicate check | new claim + existing features | semantic similarity score |
 
 All three use Groq + llama-3.3-70b-versatile. ~5-10 calls per day across a full session. Cost is negligible.
 
@@ -464,7 +464,7 @@ activity_log (
 
 ## IDE Support
 
-Every IDE on this list works with zero Scar-specific code beyond the adapter config layer. MCP is the universal bus.
+Every IDE on this list works with zero ideOS-specific code beyond the adapter config layer. MCP is the universal bus.
 
 **Full MCP support — production ready:**
 
@@ -473,6 +473,7 @@ Every IDE on this list works with zero Scar-specific code beyond the adapter con
 | Cursor | ✅ | `.cursor/mcp.json` |
 | Windsurf | ✅ | `~/.codeium/windsurf/mcp_config.json` |
 | KiloCode | ✅ | VS Code extension, settings.json |
+| Codex | ✅ | VS Code fork, settings.json |
 | Continue | ✅ fully free | VS Code + JetBrains |
 | Cline | ✅ BYOK | VS Code extension |
 | Roo Code | ✅ BYOK | VS Code extension |
@@ -498,22 +499,22 @@ Every IDE on this list works with zero Scar-specific code beyond the adapter con
 |---|---|
 | Neovim | Community plugins |
 | Emacs | Community plugins |
+|
 
-Any IDE that adds MCP support in the future gets Scar compatibility automatically. No code change required.
+Any IDE that adds MCP support in the future gets ideOS compatibility automatically. No code change required.
 
 ---
 
 ## Publishing
 
 ```
-npm publish scar-mcp   ← MCP server. IDEs pull this via npx. Users never install it.
-npm publish scar       ← CLI. Developers install this once.
+npm publish ideos   ← CLI. Developers install this once.
 ```
 
 ```bash
-npm install -g scar
+npm install -g ideos
 cd my-project
-scar init
+ideos init
 ```
 
 Done. The IDEs handle the rest.
@@ -521,7 +522,7 @@ Done. The IDEs handle the rest.
 **Distribution:**
 - MCP registries first: mcpservers.com, mcp.so, glama.ai — developers actively browse these to find servers for their IDEs
 - Windsurf MCP Marketplace — listed inside the IDE
-- GitHub README — the demo is `scar resume` output followed by the IDE opening with full context. 60 seconds, no voiceover, no explanation needed
+- GitHub README — the demo is `ideos resume` output followed by the IDE opening with full context. 60 seconds, no voiceover, no explanation needed
 - r/cursor, r/ChatGPTCoding, r/LocalLLaMA
 
 ---

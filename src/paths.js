@@ -6,16 +6,16 @@ export function projectRoot(cwd = process.cwd()) {
   return path.resolve(cwd)
 }
 
-export function scarDir(root = projectRoot()) {
-  return path.join(root, '.scar')
+export function ideosDir(root = projectRoot()) {
+  return path.join(root, '.ideos')
 }
 
 export function dbPath(root = projectRoot()) {
-  return path.join(scarDir(root), 'db.sqlite')
+  return path.join(ideosDir(root), 'db.sqlite')
 }
 
 export function exportsDir(root = projectRoot()) {
-  return path.join(scarDir(root), 'exports')
+  return path.join(ideosDir(root), 'exports')
 }
 
 export function ensureDir(dir) {
