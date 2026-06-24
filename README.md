@@ -89,8 +89,17 @@ ideOS writes a `.ideos/` directory in your project. Every AI IDE connects to it 
 | `ideos current-work`| Auto-classify feature from active git branch and files. | `ideos current-work` |
 | `ideos handoff` | Synthesize a resume brief for other IDEs or teammates. | `ideos handoff auth-system` |
 | `ideos done` | Mark feature task as complete (100% progress). | `ideos done auth-system` |
-| `ideos doctor` | Run health checks on local database schema. | `ideos doctor` |
+| `ideos status` | Print single-line status for shell prompts (PS1). | `ideos status` |
+| `ideos diff` | Show what changed since your last session. | `ideos diff` |
+| `ideos import` | Backfill features and checkpoints from git history. | `ideos import --limit 100` |
+| `ideos reset` | Wipe a feature's state and all associated data. | `ideos reset auth-system` |
+| `ideos onboard` | Generate a structured briefing for new team members. | `ideos onboard` |
+| `ideos doctor` | Validate local state and auto-repair with `--fix`. | `ideos doctor --fix` |
+| `ideos ides` | List all available IDE adapters. | `ideos ides` |
+| `ideos detect` | Scan your machine for installed IDEs & extensions. | `ideos detect` |
 | `ideos version` | Print package version. | `ideos version` |
+
+Run `ideos <command> --help` for subcommand-specific flags.
 
 ---
 

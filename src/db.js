@@ -118,7 +118,8 @@ function hydrateFromExports(db, root) {
   const dir = exportsDir(root)
   if (!fs.existsSync(dir)) return
   for (const table of exportTables) {
-    const rows = readJson(path.join(dir, `${table}.json`), [])
+    const exported = readJson(path.join(dir, `${table}.json`), [])
+    const rows = Array.isArray(exported) ? exported : (exported?.data || [])
     if (!Array.isArray(rows) || rows.length === 0) continue
     for (const row of rows) upsertExportRow(db, table, row)
   }
@@ -138,7 +139,10 @@ export function exportState(store) {
   ensureDir(exportsDir(root))
   for (const table of exportTables) {
     const rows = db.prepare(`SELECT * FROM ${table} ORDER BY ${exportOrder[table]} ASC`).all()
-    writeJson(path.join(exportsDir(root), `${table}.json`), rows)
+    writeJson(path.join(exportsDir(root), `${table}.json`), {
+      version: '1.0',
+      data: rows
+    })
   }
   writeContext(store)
 }
@@ -191,6 +195,22 @@ export function ensureFeature(store, nameOrId, description = '') {
   `).run(id, titleFromId(nameOrId), description, now, now)
   const feature = store.db.prepare('SELECT * FROM features WHERE id = ?').get(id)
   logActivity(store, null, 'feature_created', `${feature.name} (${feature.id})`)
+  exportState(store)
+  return feature
+}
+
+export function resetFeature(store, nameOrId) {
+  const id = idFromName(nameOrId)
+  const feature = store.db.prepare('SELECT * FROM features WHERE id = ? OR lower(name) = lower(?)').get(id, nameOrId)
+  if (!feature) return null
+
+  store.db.transaction(() => {
+    store.db.prepare('DELETE FROM sessions WHERE feature_id = ?').run(feature.id)
+    store.db.prepare('DELETE FROM checkpoints WHERE feature_id = ?').run(feature.id)
+    store.db.prepare('DELETE FROM decisions WHERE feature_id = ?').run(feature.id)
+    store.db.prepare('DELETE FROM features WHERE id = ?').run(feature.id)
+  })()
+
   exportState(store)
   return feature
 }

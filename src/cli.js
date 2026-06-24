@@ -6,12 +6,12 @@ import readline from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import { adapterInventory, adapters, writeAgents } from './adapters.js'
 import { cloudCall, useCloudBackend } from './cloud-client.js'
-import { ensureFeature, exportState, insertCheckpoint, openStore, recordGitActivity } from './db.js'
+import { ensureFeature, exportState, insertCheckpoint, openStore, recordGitActivity, resetFeature, idFromName, titleFromId } from './db.js'
 import { inferFeature, inferFeatureSmart } from './infer.js'
-import { normalizeDecision, checkFeatureOverlap } from './groq.js'
+import { normalizeDecision, checkFeatureOverlap, hasGroq } from './groq.js'
 import { projectRoot, ideosDir } from './paths.js'
-import { renderDashboard, renderExplain, renderHandoff, renderResume, renderTimeline } from './render.js'
-import { lastCommitSummary, recentFiles } from './git.js'
+import { renderDashboard, renderExplain, renderHandoff, renderResume, renderTimeline, renderStatus, renderDiff, getLocalState } from './render.js'
+import { lastCommitSummary, recentFiles, git } from './git.js'
 import { nowIso } from './time.js'
 import { promptInit, promptResume, launchIDE } from './init-prompt.js'
 
@@ -32,7 +32,26 @@ async function main() {
     console.log(`ideos v${pkg.version}`)
     return
   }
+  if (command !== 'help' && (args.includes('--help') || args.includes('-h'))) {
+    subcommandHelp(command)
+    return
+  }
   switch (command) {
+    case 'status':
+      await statusCommand()
+      break
+    case 'diff':
+      await diffCommand()
+      break
+    case 'import':
+      await importCommand()
+      break
+    case 'reset':
+      await resetCommand()
+      break
+    case 'onboard':
+      await onboardCommand()
+      break
     case 'init':
       await init()
       break
@@ -412,22 +431,85 @@ async function seedDemo() {
 }
 
 async function doctor() {
+  const fix = hasFlag('--fix')
+  console.log('ideOS doctor')
+  console.log(`Workspace: ${root}`)
+
   if (useCloudBackend()) {
     const health = await cloudCall('/health')
-    console.log('ideOS doctor')
-    console.log(`Workspace: ${root}`)
     console.log(`Backend: cloud`)
     console.log(`Health: ${health.ok ? 'ok' : 'failed'}`)
     return
   }
+
+  console.log('Checking .gitignore...')
+  const gitignorePath = path.join(root, '.gitignore')
+  const gitignoreContent = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8') : ''
+  const missingGitignore = ['.ideos/db.sqlite', '.ideos/db.sqlite-*', '.env'].filter(item => !gitignoreContent.split(/\r?\n/).includes(item))
+  if (missingGitignore.length > 0) {
+    if (fix) {
+      writeGitignore()
+      console.log('  [FIXED] Added missing items to .gitignore')
+    } else {
+      console.log(`  [FAIL] Missing entries in .gitignore: ${missingGitignore.join(', ')}. Run with --fix to repair.`)
+    }
+  } else {
+    console.log('  [OK] .gitignore entries verified')
+  }
+
+  console.log('Checking git hooks...')
+  const postCommitPath = path.join(root, '.git', 'hooks', 'post-commit')
+  let hookOk = fs.existsSync(postCommitPath)
+  if (hookOk) {
+    const content = fs.readFileSync(postCommitPath, 'utf8')
+    if (!content.includes('# ideOS checkpoint')) {
+      hookOk = false
+    }
+  }
+  if (!hookOk) {
+    if (fix) {
+      installGitHook()
+      console.log('  [FIXED] post-commit git hook installed')
+    } else {
+      console.log('  [FAIL] post-commit git hook is missing or stale. Run with --fix to repair.')
+    }
+  } else {
+    console.log('  [OK] post-commit git hook verified')
+  }
+
+  console.log('Checking database and exports...')
   await withStore((store) => {
     const tables = store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name)
-    console.log('ideOS doctor')
-    console.log(`Workspace: ${root}`)
-    console.log(`State: ${path.join(ideosDir(root), 'db.sqlite')}`)
-    console.log(`Tables: ${tables.join(', ')}`)
-    console.log(`Feature-centric schema: ${tables.includes('features') && tables.includes('checkpoints') ? 'ok' : 'missing'}`)
+    const schemaOk = tables.includes('features') && tables.includes('checkpoints') && tables.includes('decisions')
+    if (!schemaOk) {
+      console.log('  [FAIL] Database schema is missing tables.')
+    } else {
+      console.log('  [OK] Database schema verified')
+    }
+
+    if (fix) {
+      exportState(store)
+      console.log('  [FIXED] Exported latest state to exports/')
+    }
   })
+
+  console.log('Checking IDE configurations...')
+  const inv = adapterInventory(root)
+  for (const item of inv) {
+    const adapter = adapters.find(a => a.id === item.id)
+    if (item.detected) {
+      if (!item.verified) {
+        if (fix) {
+          adapter.install(root, { backend: 'local' })
+          console.log(`  [FIXED] Re-installed configuration for ${adapter.name}`)
+        } else {
+          console.log(`  [FAIL] ${adapter.name} configuration is not verified. Run with --fix to repair.`)
+        }
+      } else {
+        console.log(`  [OK] ${adapter.name} verified`)
+      }
+    }
+  }
 }
 
 function listIdes() {
@@ -544,8 +626,15 @@ function help() {
     '  ideos detect                               Scan laptop for installed IDEs & extensions',
     '  ideos mcp                                  Start the MCP server (stdio)',
     '  ideos done <feature> --summary "..."       Mark a feature complete',
-    '  ideos doctor                               Validate local ideOS state',
-    '  ideos version                              Show version'
+    '  ideos doctor [--fix]                       Validate local ideOS state (auto-repair with --fix)',
+    '  ideos status                               Print single-line status for shell prompts',
+    '  ideos diff                                 Display changes made in the last session',
+    '  ideos import [--limit <num>]               Import features and checkpoints from git history',
+    '  ideos reset <feature>                      Wipe a feature\'s state and associated data',
+    '  ideos onboard                              Generate a briefing for new team members',
+    '  ideos version                              Show version',
+    '',
+    'Run "ideos <command> --help" for subcommand-specific flags.'
   ]
   for (const line of lines) {
     console.log(line)
@@ -577,3 +666,400 @@ function positional(index) {
     return !all[i - 1]?.startsWith('--')
   })[index] || null
 }
+
+async function statusCommand() {
+  if (useCloudBackend()) {
+    try {
+      const stateData = await cloudCall('/state')
+      console.log(renderStatus(stateData))
+    } catch {
+      // Fail silently for shell prompts
+    }
+    return
+  }
+  try {
+    await withStore((store) => {
+      console.log(renderStatus(store))
+    })
+  } catch {
+    // Fail silently for shell prompts
+  }
+}
+
+async function diffCommand() {
+  if (useCloudBackend()) {
+    const stateData = await cloudCall('/state')
+    console.log(renderDiff(stateData))
+    return
+  }
+  await withStore((store) => {
+    console.log(renderDiff(store))
+  })
+}
+
+async function resetCommand() {
+  const feature = positional(0)
+  requireArg(feature, 'Usage: ideos reset <feature>')
+
+  if (useCloudBackend()) {
+    const result = await cloudCall('/tool/reset', { method: 'POST', body: { feature } })
+    console.log(`Feature ${result.reset} reset successfully.`)
+    return
+  }
+
+  await withStore((store) => {
+    const res = resetFeature(store, feature)
+    if (res) {
+      console.log(`Feature ${res.name} (${res.id}) and all associated state reset successfully.`)
+    } else {
+      console.log(`Feature ${feature} not found.`)
+    }
+  })
+}
+
+async function onboardCommand() {
+  let stateData
+  if (useCloudBackend()) {
+    stateData = await cloudCall('/state')
+  } else {
+    await withStore((store) => {
+      stateData = getLocalState(store)
+    })
+  }
+
+  const lines = [
+    '# Project Onboarding Briefing',
+    '',
+    `Generated on: ${new Date().toLocaleDateString()}`,
+    `Workspace: ${path.basename(root)}`,
+    '',
+    '## Active Features & Progress',
+    ''
+  ]
+
+  const activeFeatures = stateData.features.filter(f => f.status !== 'done')
+  if (activeFeatures.length === 0) {
+    lines.push('No active features under development.')
+  } else {
+    for (const f of activeFeatures) {
+      const checkpoints = stateData.checkpoints.filter(c => c.feature_id === f.id)
+      const latest = checkpoints[0]
+      const progress = latest?.progress ?? 0
+      lines.push(`### 🔒 ${f.name} (${f.id}) — ${progress}% complete`)
+      lines.push(`${f.description || '_No goal/description recorded._'}`)
+      lines.push('')
+      let nextSteps = latest?.next_steps || latest?.nextSteps || []
+      if (typeof nextSteps === 'string') {
+        try { nextSteps = JSON.parse(nextSteps) } catch { nextSteps = [] }
+      }
+      nextSteps = Array.isArray(nextSteps) ? nextSteps.filter(s => s && s.trim()) : []
+      if (nextSteps.length > 0) {
+        lines.push('**Next Steps:**')
+        for (const step of nextSteps) {
+          lines.push(`- [ ] ${step}`)
+        }
+        lines.push('')
+      }
+    }
+  }
+
+  lines.push('## Key Decisions', '')
+  if (stateData.decisions.length === 0) {
+    lines.push('No decisions recorded.')
+  } else {
+    for (const d of stateData.decisions) {
+      lines.push(`- **${d.key}**: ${d.value}${d.feature_id ? ` (Feature: ${d.feature_id})` : ''}`)
+    }
+  }
+
+  lines.push('', '## Recent Activity Checkpoints', '')
+  if (stateData.checkpoints.length === 0) {
+    lines.push('No checkpoints recorded.')
+  } else {
+    for (const c of stateData.checkpoints.slice(0, 10)) {
+      lines.push(`- _${new Date(c.created_at).toLocaleString()}_ [${c.feature_id}]: ${c.summary}`)
+    }
+  }
+
+  const onboardMarkdown = lines.join('\n')
+  fs.writeFileSync(path.join(root, 'ONBOARDING.md'), onboardMarkdown)
+
+  console.log(onboardMarkdown)
+  console.log('\n  ✓ Briefing saved to ONBOARDING.md')
+}
+
+async function importCommand() {
+  const limit = Number(flagValue('--limit') || 50)
+  console.log(`Analyzing last ${limit} commits in git history...`)
+
+  const logOutput = git(['log', `-${limit}`, '--name-only', '--pretty=format:COMMIT:%H|%cI|%an|%s'], '')
+  if (!logOutput) {
+    console.log('No git history found or git not available.')
+    return
+  }
+
+  const commits = []
+  let currentCommit = null
+
+  const lines = logOutput.split(/\r?\n/)
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    if (trimmed.startsWith('COMMIT:')) {
+      if (currentCommit) commits.push(currentCommit)
+      const parts = trimmed.slice(7).split('|')
+      currentCommit = {
+        hash: parts[0],
+        date: parts[1],
+        author: parts[2],
+        message: parts[3] || '',
+        files: []
+      }
+    } else if (currentCommit) {
+      currentCommit.files.push(trimmed)
+    }
+  }
+  if (currentCommit) commits.push(currentCommit)
+
+  if (commits.length === 0) {
+    console.log('No commits parsed.')
+    return
+  }
+
+  console.log(`Found ${commits.length} commits. Clustering...`)
+
+  let clustered = null
+  if (hasGroq()) {
+    const { clusterGitCommits } = await import('./groq.js')
+    clustered = await clusterGitCommits({ commits })
+  }
+
+  if (!clustered || !clustered.features) {
+    console.log('Using local heuristic clustering (Groq API not configured or failed)...')
+    const featuresMap = new Map()
+
+    for (const commit of commits) {
+      let featureName = 'general-improvements'
+      const match = commit.message.match(/^(?:feat|fix|docs|refactor|test|style|chore)\(([^)]+)\):|^([a-zA-Z0-9_-]+):/)
+      if (match) {
+        featureName = match[1] || match[2]
+      }
+
+      const featureId = idFromName(featureName)
+      if (!featuresMap.has(featureId)) {
+        featuresMap.set(featureId, {
+          id: featureId,
+          name: titleFromId(featureName),
+          description: `Imported features under ${featureName}`,
+          status: 'done',
+          checkpoints: []
+        })
+      }
+
+      featuresMap.get(featureId).checkpoints.push({
+        summary: commit.message,
+        progress: 100,
+        files: commit.files,
+        created_at: commit.date,
+        author: commit.author
+      })
+    }
+    clustered = { features: Array.from(featuresMap.values()) }
+  }
+
+  console.log(`Importing ${clustered.features.length} features...`)
+
+  if (useCloudBackend()) {
+    for (const f of clustered.features) {
+      await cloudCall('/tool/claim', { method: 'POST', body: { feature: f.id } })
+      for (const cp of f.checkpoints) {
+        await cloudCall('/tool/checkpoint', {
+          method: 'POST',
+          body: {
+            feature: f.id,
+            summary: cp.summary,
+            progress: cp.progress,
+            files_touched: cp.files,
+            source: 'git_hook',
+            worker_id: `git:${cp.author.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')}`
+          }
+        })
+      }
+    }
+  } else {
+    await withStore((store) => {
+      store.db.transaction(() => {
+        for (const f of clustered.features) {
+          store.db.prepare(`
+            INSERT OR IGNORE INTO features (id, name, description, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(f.id, f.name, f.description || '', f.status || 'done', f.checkpoints[f.checkpoints.length - 1]?.created_at || nowIso(), f.checkpoints[0]?.created_at || nowIso())
+
+          for (const cp of f.checkpoints) {
+            const workerId = `git:${cp.author.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')}`
+            store.db.prepare(`
+              INSERT OR IGNORE INTO workers (id, name, ide)
+              VALUES (?, ?, 'git')
+            `).run(workerId, cp.author)
+
+            store.db.prepare(`
+              INSERT INTO checkpoints (id, feature_id, worker_id, summary, progress, files_touched, blockers, next_steps, source, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'git_hook', ?)
+            `).run(crypto.randomUUID(), f.id, workerId, cp.summary, cp.progress, JSON.stringify(cp.files), '[]', '[]', cp.created_at)
+          }
+        }
+      })()
+      exportState(store)
+    })
+  }
+
+  console.log('  ✓ Git history import completed successfully.')
+}
+
+function subcommandHelp(cmd) {
+  const helps = {
+    init: [
+      'Usage: ideos init [--yes]',
+      '',
+      'Initialize .ideos database, git hooks, IDE configuration, and context files.',
+      '',
+      'Flags:',
+      '  --yes  Automate prompts and use default settings'
+    ],
+    resume: [
+      'Usage: ideos resume',
+      '',
+      'Continue where you left off by opening your IDE at the active feature.'
+    ],
+    start: [
+      'Usage: ideos start [--once]',
+      '',
+      'Open the interactive terminal dashboard to monitor and manage features.',
+      '',
+      'Flags:',
+      '  --once  Render the dashboard once and exit instead of entering interactive loop'
+    ],
+    explain: [
+      'Usage: ideos explain <feature>',
+      '',
+      'Show a detailed summary of a feature\'s current status and key decisions.'
+    ],
+    timeline: [
+      'Usage: ideos timeline <feature>',
+      '',
+      'Show the chronological timeline of progress checkpoints for a feature.'
+    ],
+    checkpoint: [
+      'Usage: ideos checkpoint <feature> --summary "..." [--progress <0-100>] [--files <list>] [--blockers <list>] [--next <list>] [--auto] [--source <src>]',
+      '',
+      'Save a progress checkpoint under a feature_id.',
+      '',
+      'Flags:',
+      '  --summary "..."   Description of the progress (Required unless --auto is used)',
+      '  --progress <num>  Estimated progress percentage (0-100)',
+      '  --files <list>    Comma-separated list of files touched',
+      '  --blockers <list> Comma-separated list of active blockers',
+      '  --next <list>     Comma-separated list of next steps',
+      '  --auto            Auto-detect settings',
+      '  --source <src>    Source of checkpoint (e.g. \'manual\', \'git_hook\')'
+    ],
+    claim: [
+      'Usage: ideos claim <feature> [--ide <name>] [--name <developer>]',
+      '',
+      'Claim a feature for the current worker/session.',
+      '',
+      'Flags:',
+      '  --ide <name>      IDE being used (defaults to IDEOS_IDE or \'cli\')',
+      '  --name <dev>      Name of developer claiming the feature'
+    ],
+    remember: [
+      'Usage: ideos remember <key> <value> [--feature <id>] OR ideos remember --prompt "..." [--feature <id>]',
+      '',
+      'Store a project or feature decision.',
+      '',
+      'Flags:',
+      '  --feature <id>    Associate the decision with a specific feature',
+      '  --prompt "..."    Normalize decision content using Groq LLM'
+    ],
+    recall: [
+      'Usage: ideos recall [key] [--feature <id>]',
+      '',
+      'Retrieve recorded decisions.',
+      '',
+      'Flags:',
+      '  --feature <id>    Filter decisions by feature ID'
+    ],
+    'current-work': [
+      'Usage: ideos current-work',
+      '',
+      'Infer the likely active feature based on the current git branch and recently modified files.'
+    ],
+    handoff: [
+      'Usage: ideos handoff <feature>',
+      '',
+      'Generate a handoff brief summarizing what was done, decisions made, and next steps.'
+    ],
+    ides: [
+      'Usage: ideos ides',
+      '',
+      'List all supported IDE adapters and their configuration status.'
+    ],
+    detect: [
+      'Usage: ideos detect',
+      '',
+      'Scan the system for installed IDEs and extensions.'
+    ],
+    mcp: [
+      'Usage: ideos mcp',
+      '',
+      'Start the ideOS Model Context Protocol (MCP) stdio server.'
+    ],
+    done: [
+      'Usage: ideos done <feature> --summary "..."',
+      '',
+      'Mark a feature as done.'
+    ],
+    doctor: [
+      'Usage: ideos doctor [--fix]',
+      '',
+      'Validate local ideOS database, state, and files.',
+      '',
+      'Flags:',
+      '  --fix  Auto-repair found issues (MCP config, DB health, etc.)'
+    ],
+    status: [
+      'Usage: ideos status',
+      '',
+      'Print a single-line status for shell prompts.'
+    ],
+    diff: [
+      'Usage: ideos diff',
+      '',
+      'Display changes made in the last session.'
+    ],
+    import: [
+      'Usage: ideos import [--limit <number>]',
+      '',
+      'Import features and checkpoints from git history.',
+      '',
+      'Flags:',
+      '  --limit <num>  Number of recent commits to analyze (default: 50)'
+    ],
+    reset: [
+      'Usage: ideos reset <feature>',
+      '',
+      'Wipe a feature\'s state and all associated checkpoints, decisions, and tasks.'
+    ],
+    onboard: [
+      'Usage: ideos onboard',
+      '',
+      'Generate a structured markdown briefing document for new team members.'
+    ]
+  }
+
+  const lines = helps[cmd] || [`No help available for subcommand: ${cmd}`, 'Run "ideos help" for global usage.']
+  for (const line of lines) {
+    console.log(line)
+  }
+}
+

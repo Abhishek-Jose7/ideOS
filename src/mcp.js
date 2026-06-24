@@ -31,9 +31,18 @@ server.registerResource(
     description: 'Current feature-centric project continuity state',
     mimeType: 'text/markdown'
   },
-  async () => withStore((store) => ({
-    contents: [{ uri: 'ideos://context', mimeType: 'text/markdown', text: renderResume(store) }]
-  }))
+  async () => {
+    let text
+    if (useCloudBackend()) {
+      const stateData = await cloudCall('/state')
+      text = renderResume(stateData)
+    } else {
+      text = await withStore((store) => renderResume(store))
+    }
+    return {
+      contents: [{ uri: 'ideos://context', mimeType: 'text/markdown', text }]
+    }
+  }
 )
 
 server.registerResource(
@@ -44,19 +53,31 @@ server.registerResource(
     description: 'Engineering decisions recorded in this project',
     mimeType: 'application/json'
   },
-  async () => withStore((store) => {
-    const decisions = store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all()
+  async () => {
+    let decisions
+    if (useCloudBackend()) {
+      const stateData = await cloudCall('/state')
+      decisions = stateData.decisions
+    } else {
+      decisions = await withStore((store) => store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all())
+    }
     return {
       contents: [{ uri: 'ideos://decisions', mimeType: 'application/json', text: JSON.stringify(decisions, null, 2) }]
     }
-  })
+  }
 )
 
 server.registerResource(
   'ideos-feature-detail',
   new ResourceTemplate('ideos://feature/{id}', {
-    list: async () => withStore((store) => {
-      const features = store.db.prepare('SELECT * FROM features').all()
+    list: async () => {
+      let features
+      if (useCloudBackend()) {
+        const stateData = await cloudCall('/state')
+        features = stateData.features
+      } else {
+        features = await withStore((store) => store.db.prepare('SELECT * FROM features').all())
+      }
       return {
         resources: features.map((feature) => ({
           uri: `ideos://feature/${feature.id}`,
@@ -64,18 +85,51 @@ server.registerResource(
           mimeType: 'text/markdown'
         }))
       }
-    })
+    }
   }),
   {
     title: 'ideOS Feature Detail',
     description: 'Detailed explanation of a specific feature'
   },
-  async (uri, variables) => withStore((store) => {
+  async (uri, variables) => {
     const id = variables.id
-    return {
-      contents: [{ uri: uri.toString(), mimeType: 'text/markdown', text: renderExplain(store, id) }]
+    let text
+    if (useCloudBackend()) {
+      const stateData = await cloudCall('/state')
+      text = renderExplain(stateData, id)
+    } else {
+      text = await withStore((store) => renderExplain(store, id))
     }
-  })
+    return {
+      contents: [{ uri: uri.toString(), mimeType: 'text/markdown', text }]
+    }
+  }
+)
+
+server.registerPrompt(
+  'ideos-resume',
+  {
+    title: 'ideOS Resume Prompt',
+    description: 'Get the latest ideOS feature context to resume development'
+  },
+  async () => {
+    let text
+    if (useCloudBackend()) {
+      const stateData = await cloudCall('/state')
+      text = renderResume(stateData)
+    } else {
+      text = await withStore((store) => renderResume(store))
+    }
+    return {
+      messages: [{
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `Here is the current ideOS project context to resume work:\n\n${text}`
+        }
+      }]
+    }
+  }
 )
 
 server.registerTool(

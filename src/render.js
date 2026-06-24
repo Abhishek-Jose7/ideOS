@@ -458,6 +458,88 @@ function makeTopBorder(projectName, width = 64) {
   return `${prefix}${leftDash}${name}${rightDash}${suffix}`
 }
 
+export function renderStatus(stateOrStore) {
+  const state = normalizeState(stateOrStore.db ? getLocalState(stateOrStore) : stateOrStore)
+  const lastSession = state.sessions[0]
+  const feature = lastSession?.feature_id
+    ? state.features.find((f) => f.id === lastSession.feature_id)
+    : state.features[0]
+  if (!feature) {
+    return ''
+  }
+  const featureCheckpoints = state.checkpoints.filter((c) => c.feature_id === feature.id)
+  const latest = featureCheckpoints[0]
+  const progress = latest?.progress ?? 0
+  
+  let workerStr = ''
+  if (lastSession) {
+    const worker = state.active_workers.find(w => w.id === lastSession.worker_id)
+    const ideName = titleFromId(lastSession.ide)
+    const workerName = worker ? worker.name : 'developer'
+    workerStr = ` · ${ideName} (${workerName})`
+  }
+  
+  const decisionsCount = state.decisions.filter(d => d.feature_id === feature.id || d.feature_id === null).length
+  const decisionsStr = decisionsCount > 0 ? ` · ${decisionsCount} decision${decisionsCount === 1 ? '' : 's'}` : ''
+  
+  return `${feature.name} ${progress}%${workerStr}${decisionsStr}`
+}
+
+export function renderDiff(stateOrStore) {
+  const state = normalizeState(stateOrStore.db ? getLocalState(stateOrStore) : stateOrStore)
+  const sessions = state.sessions || []
+  if (sessions.length === 0) {
+    return 'No sessions recorded yet. Start work with `ideos claim <feature>` or save checkpoints.'
+  }
+
+  const s0 = sessions[0]
+  const startTime = s0.started_at
+  const endTime = s0.ended_at || new Date().toISOString()
+
+  const checkpoints = state.checkpoints.filter(c => c.created_at >= startTime && c.created_at <= endTime)
+  const decisions = state.decisions.filter(d => d.created_at >= startTime && d.created_at <= endTime)
+  const files = [...new Set(checkpoints.flatMap(c => c.files_touched || []))]
+
+  const title = `Changes during session: ${titleFromId(s0.ide)} (${ago(s0.started_at)})`
+  const lines = [
+    `  ${title}`,
+    `  ──────────────────────────────────────────────────`,
+    `  Session Started: ${s0.started_at}`,
+    s0.ended_at ? `  Session Ended:   ${s0.ended_at}` : `  Session Status:  Active now`,
+    s0.feature_id ? `  Active Feature:  ${s0.feature_id}` : '',
+    '',
+    `  Checkpoints (${checkpoints.length}):`,
+  ]
+
+  if (checkpoints.length === 0) {
+    lines.push('    No checkpoints recorded in this session.')
+  } else {
+    for (const c of checkpoints) {
+      lines.push(`    + ${c.summary} (progress: ${c.progress}%)`)
+    }
+  }
+
+  lines.push('', `  Decisions (${decisions.length}):`)
+  if (decisions.length === 0) {
+    lines.push('    No decisions recorded in this session.')
+  } else {
+    for (const d of decisions) {
+      lines.push(`    + [${d.key}] ${d.value}`)
+    }
+  }
+
+  lines.push('', `  Files Touched (${files.length}):`)
+  if (files.length === 0) {
+    lines.push('    No files recorded.')
+  } else {
+    for (const f of files) {
+      lines.push(`    + ${f}`)
+    }
+  }
+
+  return lines.join('\n')
+}
+
 function unique(items) {
   return [...new Set(items.filter(Boolean))]
 }

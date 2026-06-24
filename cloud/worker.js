@@ -17,6 +17,7 @@ export default {
     if (url.pathname === '/tool/done') return json(await done(request, env))
     if (url.pathname === '/tool/heartbeat') return json(await heartbeat(request, env))
     if (url.pathname === '/tool/explain') return json(await explainFeature(request, env))
+    if (url.pathname === '/tool/reset') return json(await reset(request, env))
 
     return json({ error: 'Not found' }, 404)
   }
@@ -236,6 +237,15 @@ function events() {
       Connection: 'keep-alive'
     }
   })
+}
+
+async function reset(request, env) {
+  const { feature } = await request.json()
+  await env.DB.prepare('DELETE FROM features WHERE id = ?').bind(feature).run()
+  await env.DB.prepare('DELETE FROM checkpoints WHERE feature_id = ?').bind(feature).run()
+  await env.DB.prepare('DELETE FROM decisions WHERE feature_id = ?').bind(feature).run()
+  await env.DB.prepare('DELETE FROM sessions WHERE feature_id = ?').bind(feature).run()
+  return { reset: feature }
 }
 
 function json(value, status = 200) {

@@ -82,3 +82,38 @@ export async function checkFeatureOverlap({ newFeature, features }) {
     user: JSON.stringify({ newFeature, features }, null, 2)
   })
 }
+
+export async function clusterGitCommits({ commits }) {
+  const system = [
+    'You analyze git history commits and cluster them into logical product features (e.g. "authentication", "database-setup", "cli-commands").',
+    'For each logical feature, identify the associated commits and represent them as progress checkpoints.',
+    'Assign a logical status to each feature ("active", "done", "planning").',
+    'Return JSON only matching the schema:',
+    '{',
+    '  "features": [',
+    '    {',
+    '      "id": "feature-id",',
+    '      "name": "Feature Name",',
+    '      "description": "Short description of the feature goal",',
+    '      "status": "active"|"done",',
+    '      "checkpoints": [',
+    '        {',
+    '          "summary": "Checkpoint summary description",',
+    '          "progress": 50,',
+    '          "files": ["file1", "file2"],',
+    '          "created_at": "ISO-date",',
+    '          "author": "author-name"',
+    '        }',
+    '      ]',
+    '    }',
+    '  ]',
+    '}'
+  ].join('\n')
+
+  return groqJson({
+    fallback: null,
+    system,
+    user: JSON.stringify({ commits }, null, 2)
+  })
+}
+
