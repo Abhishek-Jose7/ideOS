@@ -122,6 +122,13 @@ async function main() {
       detectLocalIdes()
       break
     case 'mcp':
+      if (process.stdin.isTTY) {
+        console.error('\x1b[1m\x1b[32mideOS MCP Server started (stdio transport mode)\x1b[0m')
+        console.error('This process is designed to be launched by your AI IDE (Cursor, Windsurf, Trae, etc.) as an MCP client.')
+        console.error('It listens on stdin/stdout and does not accept direct keyboard input.')
+        console.error('Press \x1b[1mCtrl+C\x1b[0m to terminate this process.')
+        console.error('--------------------------------------------------')
+      }
       await import('./mcp.js')
       break
     case 'done':

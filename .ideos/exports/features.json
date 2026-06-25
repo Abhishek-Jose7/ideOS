@@ -1,10 +1,13 @@
-[
-  {
-    "id": "unclassified-work",
-    "name": "Unclassified Work",
-    "description": "",
-    "status": "active",
-    "created_at": "2026-06-23T22:33:35.823Z",
-    "updated_at": "2026-06-23T23:07:36.532Z"
-  }
-]
+{
+  "version": "1.0",
+  "data": [
+    {
+      "id": "unclassified-work",
+      "name": "Unclassified Work",
+      "description": "",
+      "status": "active",
+      "created_at": "2026-06-23T22:33:35.823Z",
+      "updated_at": "2026-06-24T07:42:28.791Z"
+    }
+  ]
+}

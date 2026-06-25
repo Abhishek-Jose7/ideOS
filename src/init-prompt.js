@@ -63,7 +63,7 @@ function InitWizard({ root, onDone }) {
       React.createElement(Text, { key: 'hint' }, 'Use Space to toggle, Enter to continue.'),
       React.createElement(MultiSelect, {
         key: 'multi',
-        visibleOptionCount: Math.min(11, adapters.length),
+        visibleOptionCount: adapters.length,
         defaultValue: selected,
         options: adapters.map((adapter) => ({
           label: `${adapter.name} - ${detected.includes(adapter.id) ? 'found' : 'not found'}`,
