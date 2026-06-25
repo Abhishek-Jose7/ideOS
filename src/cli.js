@@ -505,7 +505,7 @@ async function doctor() {
   for (const item of inv) {
     const adapter = adapters.find(a => a.id === item.id)
     if (item.detected) {
-      if (!item.verified) {
+      if (!item.configured) {
         if (fix) {
           adapter.install(root, { backend: 'local' })
           console.log(`  [FIXED] Re-installed configuration for ${adapter.name}`)
