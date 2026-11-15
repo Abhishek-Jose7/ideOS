@@ -28,7 +28,7 @@ Install ideOS globally:
 npm install -g ideos-cli
 ```
 
-Requires Node.js 20.19 or newer.
+Requires Node.js 22 or newer.
 
 ---
 

@@ -89,7 +89,7 @@ ideOS runs an official Model Context Protocol (MCP) server so that AI assistants
 ## 🛠️ Local Development Setup
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) `>= 20.19.0`
+- [Node.js](https://nodejs.org/) `>= 22.0.0`
 - [Git](https://git-scm.com/)
 
 ### Step-by-Step Instructions
