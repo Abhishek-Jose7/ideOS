@@ -205,6 +205,7 @@ export function resetFeature(store, nameOrId) {
   if (!feature) return null
 
   store.db.transaction(() => {
+    store.db.prepare('UPDATE workers SET current_feature = NULL WHERE current_feature = ?').run(feature.id)
     store.db.prepare('DELETE FROM sessions WHERE feature_id = ?').run(feature.id)
     store.db.prepare('DELETE FROM checkpoints WHERE feature_id = ?').run(feature.id)
     store.db.prepare('DELETE FROM decisions WHERE feature_id = ?').run(feature.id)

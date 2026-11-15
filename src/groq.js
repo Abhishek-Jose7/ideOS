@@ -1,33 +1,63 @@
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const MODEL = process.env.IDEOS_GROQ_MODEL || 'llama-3.3-70b-versatile'
+const PROVIDERS = {
+  groq: { url: 'https://api.groq.com/openai/v1/chat/completions', model: 'openai/gpt-oss-120b', format: 'openai' },
+  openai: { url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-6-luna', format: 'openai' },
+  openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openai/gpt-4o-mini', format: 'openai' },
+  anthropic: { url: 'https://api.anthropic.com/v1/messages', model: 'claude-haiku-4-5-20251001', format: 'anthropic' }
+}
+
+function providerConfig() {
+  const legacyGroqKey = process.env.GROQ_API_KEY
+  const provider = (process.env.IDEOS_AI_PROVIDER || (legacyGroqKey ? 'groq' : 'none')).toLowerCase()
+  const key = process.env.IDEOS_AI_API_KEY || ({
+    groq: legacyGroqKey,
+    openai: process.env.OPENAI_API_KEY,
+    openrouter: process.env.OPENROUTER_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY
+  }[provider] || '')
+  return { provider, key, config: PROVIDERS[provider] }
+}
 
 export function hasGroq() {
-  return Boolean(process.env.GROQ_API_KEY)
+  return Boolean(providerConfig().key && providerConfig().config)
 }
 
 export async function groqJson({ system, user, fallback }) {
-  if (!hasGroq()) return fallback
+  const { provider, key, config } = providerConfig()
+  if (!key || !config) return fallback
   try {
-    const response = await fetch(GROQ_URL, {
+    const legacyGroqModel = process.env.IDEOS_GROQ_MODEL
+    const model = process.env.IDEOS_AI_MODEL || (provider === 'groq' && legacyGroqModel && legacyGroqModel !== 'llama-3.3-70b-versatile' ? legacyGroqModel : config.model)
+    const headers = config.format === 'anthropic'
+      ? { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
+      : { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+    const body = config.format === 'anthropic'
+      ? {
+          model,
+          max_tokens: 2048,
+          system: `${system}\nReturn valid JSON only, with no markdown fences.`,
+          messages: [{ role: 'user', content: user }]
+        }
+      : {
+          model,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user }
+          ]
+        }
+    const response = await fetch(config.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user }
-        ]
-      })
+      headers,
+      body: JSON.stringify(body)
     })
     if (!response.ok) return fallback
     const data = await response.json()
-    const text = data?.choices?.[0]?.message?.content
-    return text ? JSON.parse(text) : fallback
+    const text = config.format === 'anthropic'
+      ? data?.content?.find((item) => item.type === 'text')?.text
+      : data?.choices?.[0]?.message?.content
+    if (!text) return fallback
+    const json = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    return JSON.parse(json)
   } catch {
     return fallback
   }

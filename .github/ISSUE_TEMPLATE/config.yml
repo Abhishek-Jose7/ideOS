@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🗺️ Project Roadmap
+    url: https://github.com/Abhishek-Jose7/ideOS/blob/main/ROADMAP.md
+    about: Review our planned features and current milestones before opening a request.
+  - name: 📖 Contributing Guide
+    url: https://github.com/Abhishek-Jose7/ideOS/blob/main/CONTRIBUTING.md
+    about: Learn how to set up your local environment and submit pull requests.
+  - name: 💡 Good First Issues
+    url: https://github.com/Abhishek-Jose7/ideOS/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
+    about: Find bite-sized tasks perfect for your first contribution!

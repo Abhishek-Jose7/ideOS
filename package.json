@@ -1,15 +1,25 @@
 {
   "name": "ideos-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Development continuity layer for AI IDEs.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abhishek-Jose7/ideOS.git"
+  },
+  "homepage": "https://github.com/Abhishek-Jose7/ideOS#readme",
+  "bugs": {
+    "url": "https://github.com/Abhishek-Jose7/ideOS/issues"
+  },
   "bin": {
-    "ideos": "./src/cli.js"
+    "ideos": "src/cli.js"
   },
   "scripts": {
     "ideos": "node ./src/cli.js",
     "mcp": "node ./src/cli.js mcp",
     "check": "node ./src/cli.js doctor",
+    "build": "esbuild src/dashboard.jsx --loader:.jsx=jsx --format=esm --platform=node --outfile=src/dashboard.js",
+    "prepack": "npm run build",
     "demo": "node ./src/cli.js init --yes && node ./src/cli.js seed-demo && node ./src/cli.js resume",
     "smoke": "node ./scripts/smoke-test.js",
     "test:watcher": "node ./scripts/watcher-test.js"
@@ -24,7 +34,7 @@
     "react": "^19.2.7"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
   },
   "files": [
     ".env.example",
@@ -37,6 +47,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "wrangler": "^4.102.0"
   }
 }

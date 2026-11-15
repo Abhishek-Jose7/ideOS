@@ -3,9 +3,9 @@ const jsonHeaders = { 'Content-Type': 'application/json' }
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
-    await ensureSchema(env.DB)
-
     if (url.pathname === '/health') return json({ ok: true, backend: 'cloud' })
+    if (!isAuthorized(request, env)) return json({ error: 'Unauthorized' }, 401)
+    await ensureSchema(env.DB)
     if (url.pathname === '/state') return json(await state(env.DB))
     if (url.pathname === '/events') return events()
     if (url.pathname === '/tool/current-work') return json(await currentWork(request, env))
@@ -21,6 +21,12 @@ export default {
 
     return json({ error: 'Not found' }, 404)
   }
+}
+
+function isAuthorized(request, env) {
+  const expected = env.IDEOS_API_KEY
+  if (typeof expected !== 'string' || expected.length < 32) return false
+  return request.headers.get('Authorization') === `Bearer ${expected}`
 }
 
 async function ensureSchema(db) {
@@ -69,10 +75,10 @@ async function currentWork(request, env) {
 
 async function handoff(request, env) {
   const { feature } = await request.json()
-  const featureRow = await env.DB.prepare('SELECT * FROM features WHERE id = ?').bind(feature).first()
+  const featureRow = await env.DB.prepare('SELECT * FROM features WHERE id = ? OR lower(name) = lower(?)').bind(feature, feature).first()
   if (!featureRow) return { error: 'feature not found' }
-  const checkpoints = (await env.DB.prepare('SELECT * FROM checkpoints WHERE feature_id = ? ORDER BY created_at DESC').bind(feature).all()).results
-  const decisions = (await env.DB.prepare('SELECT * FROM decisions WHERE feature_id = ? OR feature_id IS NULL ORDER BY created_at DESC').bind(feature).all()).results
+  const checkpoints = (await env.DB.prepare('SELECT * FROM checkpoints WHERE feature_id = ? ORDER BY created_at DESC').bind(featureRow.id).all()).results
+  const decisions = (await env.DB.prepare('SELECT * FROM decisions WHERE feature_id = ? OR feature_id IS NULL ORDER BY created_at DESC').bind(featureRow.id).all()).results
   return groq(env, {
     system: 'Write a concise feature handoff. Return JSON only: {"brief":"markdown text","progress":0,"completed":["..."],"remaining":["..."],"blockers":["..."],"next_action":"..."}',
     user: JSON.stringify({ feature: featureRow, checkpoints, decisions }),
@@ -88,44 +94,46 @@ async function remember(request, env) {
     user: JSON.stringify({ ...input, features }),
     fallback: { key: input.key, value: input.value, feature: input.feature || null }
   })
-  if (!normalized.key || !normalized.value) return { error: 'Prompt-only remember requires GROQ_API_KEY. Or pass explicit key/value.' }
+  if (!normalized.key || !normalized.value) return { error: 'Prompt-only remember requires an AI provider API key. Or pass explicit key/value.' }
   const now = new Date().toISOString()
+  const featureId = normalized.feature ? await ensureFeature(env.DB, normalized.feature, now) : null
   await env.DB.prepare('INSERT INTO decisions (id, feature_id, key, value, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), normalized.feature || null, normalized.key, normalized.value, input.created_by || 'cloud', now)
+    .bind(crypto.randomUUID(), featureId, normalized.key, normalized.value, input.created_by || 'cloud', now)
     .run()
-  return { remembered: normalized.key, value: normalized.value, feature_id: normalized.feature || null }
+  return { remembered: normalized.key, value: normalized.value, feature_id: featureId }
 }
 
 async function claim(request, env) {
   const input = await request.json()
   const now = new Date().toISOString()
-  await ensureFeature(env.DB, input.feature, now)
-  const features = (await env.DB.prepare('SELECT * FROM features WHERE id <> ?').bind(input.feature).all()).results
+  const featureId = await ensureFeature(env.DB, input.feature, now)
+  const features = (await env.DB.prepare('SELECT * FROM features WHERE id <> ?').bind(featureId).all()).results
   const overlap = await groq(env, {
     system: 'You analyze whether a newly claimed feature has high semantic overlap/duplication with any existing features. Return JSON only: {"duplicate":true|false,"overlap_feature":"existing-feature-id-or-null","reason":"explanation of overlap"}',
-    user: JSON.stringify({ newFeature: input.feature, features }),
+    user: JSON.stringify({ newFeature: featureId, features }),
     fallback: { duplicate: false, overlap_feature: null, reason: '' }
   })
   const ide = input.ide || 'cloud'
   const name = input.name || 'developer'
   const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
-  const conflicts = (await env.DB.prepare('SELECT * FROM workers WHERE current_feature = ? AND id <> ?').bind(input.feature, workerId).all()).results
+  const conflicts = (await env.DB.prepare('SELECT * FROM workers WHERE current_feature = ? AND id <> ?').bind(featureId, workerId).all()).results
   await env.DB.prepare('INSERT INTO workers (id, name, ide, last_heartbeat, current_feature) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_heartbeat = excluded.last_heartbeat, current_feature = excluded.current_feature')
-    .bind(workerId, name, ide, now, input.feature)
+    .bind(workerId, name, ide, now, featureId)
     .run()
   await env.DB.prepare('INSERT INTO sessions (id, worker_id, ide, feature_id, started_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), workerId, ide, input.feature, now)
+    .bind(crypto.randomUUID(), workerId, ide, featureId, now)
     .run()
-  return { claimed: input.feature, conflicts, overlap }
+  return { claimed: featureId, conflicts, overlap }
 }
 
 async function checkpoint(request, env) {
   const input = await request.json()
   const now = new Date().toISOString()
-  await ensureFeature(env.DB, input.feature, now)
+  const featureId = await ensureFeature(env.DB, input.feature, now)
   await env.DB.prepare('INSERT INTO checkpoints (id, feature_id, worker_id, summary, progress, files_touched, blockers, next_steps, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), input.feature, input.worker_id || null, input.summary, input.progress || 0, JSON.stringify(input.files_touched || []), JSON.stringify(input.blockers || []), JSON.stringify(input.next_steps || []), input.source || 'manual', now)
+    .bind(crypto.randomUUID(), featureId, input.worker_id || null, input.summary, input.progress || 0, JSON.stringify(input.files_touched || []), JSON.stringify(input.blockers || []), JSON.stringify(input.next_steps || []), input.source || 'manual', now)
     .run()
+  await env.DB.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').bind('active', now, featureId).run()
   if (input.source === 'git_hook') {
     const workerId = 'git:post-commit'
     const name = 'git hook'
@@ -134,18 +142,19 @@ async function checkpoint(request, env) {
       INSERT INTO workers (id, name, ide, last_git_activity, current_feature)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET last_git_activity = excluded.last_git_activity, current_feature = COALESCE(excluded.current_feature, workers.current_feature)
-    `).bind(workerId, name, ide, now, input.feature || null).run()
+    `).bind(workerId, name, ide, now, featureId).run()
   }
-  return { saved: true, feature_id: input.feature }
+  return { saved: true, feature_id: featureId }
 }
 
 async function heartbeat(request, env) {
   const input = await request.json().catch(() => ({}))
   const ide = input.ide || 'cloud'
   const name = input.name || 'developer'
+  const featureId = input.feature ? await ensureFeature(env.DB, input.feature, new Date().toISOString()) : null
   const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
   await env.DB.prepare('INSERT INTO workers (id, name, ide, last_heartbeat, current_feature) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_heartbeat = excluded.last_heartbeat, current_feature = COALESCE(excluded.current_feature, workers.current_feature)')
-    .bind(workerId, name, ide, new Date().toISOString(), input.feature || null)
+    .bind(workerId, name, ide, new Date().toISOString(), featureId)
     .run()
   return { heartbeat: true, worker_id: workerId }
 }
@@ -154,9 +163,10 @@ async function fileActivity(request, env) {
   const input = await request.json().catch(() => ({}))
   const ide = input.ide || 'cloud'
   const name = input.name || 'developer'
+  const featureId = input.feature ? await ensureFeature(env.DB, input.feature, new Date().toISOString()) : null
   const workerId = `${ide}:${name}`.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')
   await env.DB.prepare('INSERT INTO workers (id, name, ide, last_file_activity, current_feature) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_file_activity = excluded.last_file_activity, current_feature = COALESCE(excluded.current_feature, workers.current_feature)')
-    .bind(workerId, name, ide, new Date().toISOString(), input.feature || null)
+    .bind(workerId, name, ide, new Date().toISOString(), featureId)
     .run()
   return { file_activity: true, worker_id: workerId }
 }
@@ -164,12 +174,12 @@ async function fileActivity(request, env) {
 async function done(request, env) {
   const input = await request.json()
   const now = new Date().toISOString()
-  await ensureFeature(env.DB, input.feature, now)
-  await env.DB.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').bind('done', now, input.feature).run()
+  const featureId = await ensureFeature(env.DB, input.feature, now)
+  await env.DB.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').bind('done', now, featureId).run()
   await env.DB.prepare('INSERT INTO checkpoints (id, feature_id, worker_id, summary, progress, files_touched, blockers, next_steps, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), input.feature, null, input.summary || 'Feature complete', 100, '[]', '[]', '[]', 'manual', now)
+    .bind(crypto.randomUUID(), featureId, null, input.summary || 'Feature complete', 100, '[]', '[]', '[]', 'manual', now)
     .run()
-  return { done: input.feature }
+  return { done: featureId }
 }
 
 async function explainFeature(request, env) {
@@ -190,27 +200,41 @@ async function explainFeature(request, env) {
 }
 
 async function ensureFeature(db, id, now) {
-  const name = id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  const featureId = String(id || 'feature').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || `feature-${Date.now()}`
+  const name = featureId.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
   await db.prepare('INSERT INTO features (id, name, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at')
-    .bind(id, name, '', 'active', now, now)
+    .bind(featureId, name, '', 'active', now, now)
     .run()
+  return featureId
 }
 
 async function groq(env, { system, user, fallback }) {
-  if (!env.GROQ_API_KEY) return fallback
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const provider = (env.IDEOS_AI_PROVIDER || (env.GROQ_API_KEY ? 'groq' : 'none')).toLowerCase()
+  const config = {
+    groq: { url: 'https://api.groq.com/openai/v1/chat/completions', model: 'openai/gpt-oss-120b' },
+    openai: { url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-6-luna' },
+    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openai/gpt-4o-mini' },
+    anthropic: { url: 'https://api.anthropic.com/v1/messages', model: 'claude-haiku-4-5-20251001' }
+  }[provider]
+  const apiKey = env.IDEOS_AI_API_KEY || ({ groq: env.GROQ_API_KEY, openai: env.OPENAI_API_KEY, anthropic: env.ANTHROPIC_API_KEY, openrouter: env.OPENROUTER_API_KEY }[provider] || '')
+  if (!config || !apiKey) return fallback
+  const anthropic = provider === 'anthropic'
+  const legacyGroqModel = env.IDEOS_GROQ_MODEL
+  const model = env.IDEOS_AI_MODEL || (provider === 'groq' && legacyGroqModel && legacyGroqModel !== 'llama-3.3-70b-versatile' ? legacyGroqModel : config.model)
+  const response = await fetch(config.url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: env.IDEOS_GROQ_MODEL || 'llama-3.3-70b-versatile',
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
-    })
+    headers: anthropic
+      ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }
+      : { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(anthropic
+      ? { model, max_tokens: 2048, system: `${system}\nReturn valid JSON only, with no markdown fences.`, messages: [{ role: 'user', content: user }] }
+      : { model, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
   })
   if (!response.ok) return fallback
   const data = await response.json()
-  return JSON.parse(data.choices[0].message.content)
+  const text = anthropic ? data.content?.find((item) => item.type === 'text')?.text : data.choices?.[0]?.message?.content
+  if (!text) return fallback
+  return JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim())
 }
 
 function localClassify({ features, branch, files }) {
@@ -241,11 +265,16 @@ function events() {
 
 async function reset(request, env) {
   const { feature } = await request.json()
-  await env.DB.prepare('DELETE FROM features WHERE id = ?').bind(feature).run()
-  await env.DB.prepare('DELETE FROM checkpoints WHERE feature_id = ?').bind(feature).run()
-  await env.DB.prepare('DELETE FROM decisions WHERE feature_id = ?').bind(feature).run()
-  await env.DB.prepare('DELETE FROM sessions WHERE feature_id = ?').bind(feature).run()
-  return { reset: feature }
+  const row = await env.DB.prepare('SELECT * FROM features WHERE id = ? OR lower(name) = lower(?)').bind(feature, feature).first()
+  if (!row) return { reset: null }
+  await env.DB.batch([
+    env.DB.prepare('UPDATE workers SET current_feature = NULL WHERE current_feature = ?').bind(row.id),
+    env.DB.prepare('DELETE FROM sessions WHERE feature_id = ?').bind(row.id),
+    env.DB.prepare('DELETE FROM checkpoints WHERE feature_id = ?').bind(row.id),
+    env.DB.prepare('DELETE FROM decisions WHERE feature_id = ?').bind(row.id),
+    env.DB.prepare('DELETE FROM features WHERE id = ?').bind(row.id)
+  ])
+  return { reset: row.id }
 }
 
 function json(value, status = 200) {

@@ -1,11 +1,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
-const repo = path.resolve(import.meta.dirname, '..')
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ideos-watch-'))
 const cli = path.join(repo, 'src', 'cli.js')
 const mcp = path.join(repo, 'src', 'mcp.js')
@@ -25,7 +26,8 @@ fs.writeFileSync(path.join(tmp, 'watch-me.txt'), `saved ${Date.now()}\n`)
 await new Promise((resolve) => setTimeout(resolve, 34_000))
 await client.listTools()
 
-const checkpoints = JSON.parse(fs.readFileSync(path.join(tmp, '.ideos', 'exports', 'checkpoints.json'), 'utf8'))
+const checkpointExport = JSON.parse(fs.readFileSync(path.join(tmp, '.ideos', 'exports', 'checkpoints.json'), 'utf8'))
+const checkpoints = Array.isArray(checkpointExport) ? checkpointExport : checkpointExport.data
 const found = checkpoints.some((checkpoint) => checkpoint.source === 'file_watch' && checkpoint.feature_id === 'unclassified-work')
 
 await client.close()

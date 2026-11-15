@@ -2,9 +2,9 @@ import readline from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import { render, Box, Text, useApp } from 'ink'
 import React, { useMemo, useState } from 'react'
-import { MultiSelect, Select, TextInput } from '@inkjs/ui'
+import { MultiSelect, PasswordInput, Select, TextInput } from '@inkjs/ui'
 import { adapters } from './adapters.js'
-import { exec } from 'node:child_process'
+import { spawn } from 'node:child_process'
 
 const modeOptions = [
   { label: 'Both', value: 'both' },
@@ -15,6 +15,14 @@ const modeOptions = [
 const backendOptions = [
   { label: 'Local - just me, this machine', value: 'local' },
   { label: 'Cloud - team or multiple machines', value: 'cloud' }
+]
+
+const providerOptions = [
+  { label: 'No provider - use offline fallbacks', value: 'none' },
+  { label: 'Groq', value: 'groq' },
+  { label: 'OpenAI', value: 'openai' },
+  { label: 'Anthropic (Claude)', value: 'anthropic' },
+  { label: 'OpenRouter', value: 'openrouter' }
 ]
 
 export async function promptInit({ root }) {
@@ -36,9 +44,10 @@ function InitWizard({ root, onDone }) {
   const [selected, setSelected] = useState(defaultSelected)
   const [backend, setBackend] = useState('local')
   const [workspaceUrl, setWorkspaceUrl] = useState('')
+  const [aiProvider, setAiProvider] = useState(() => process.env.IDEOS_AI_PROVIDER || 'none')
 
-  const finish = (wUrl = '', gKey = '') => {
-    onDone({ mode, selected, backend, workspaceUrl: wUrl, groqKey: gKey })
+  const finish = (wUrl = '', key = '') => {
+    onDone({ mode, selected, backend, workspaceUrl: wUrl, aiProvider, aiApiKey: key })
     exit()
   }
 
@@ -83,7 +92,7 @@ function InitWizard({ root, onDone }) {
         onChange: (value) => {
           setBackend(value)
           if (value === 'cloud') setStep('workspaceUrl')
-          else setStep('groqKey')
+          else setStep('provider')
         }
       })
     ]),
@@ -94,15 +103,24 @@ function InitWizard({ root, onDone }) {
         placeholder: 'https://your-ideos-worker.your-subdomain.workers.dev',
         onSubmit: (value) => {
           setWorkspaceUrl(value.trim())
-          setStep('groqKey')
+          setStep('provider')
         }
       })
     ]),
-    step === 'groqKey' && React.createElement(Box, { key: 'groqKey', flexDirection: 'column' }, [
-      React.createElement(Text, { key: 'q' }, '? Enter your Groq API key (optional, press Enter to skip):'),
-      React.createElement(TextInput, {
+    step === 'provider' && React.createElement(Box, { key: 'provider', flexDirection: 'column' }, [
+      React.createElement(Text, { key: 'q' }, '? Which AI provider should ideOS use for summaries and decision help?'),
+      React.createElement(Select, { key: 'select', options: providerOptions, onChange: (value) => {
+        setAiProvider(value)
+        if (value === 'none') finish(workspaceUrl)
+        else setStep('apiKey')
+      } })
+    ]),
+    step === 'apiKey' && React.createElement(Box, { key: 'apiKey', flexDirection: 'column' }, [
+      React.createElement(Text, { key: 'q' }, `? Enter your ${{ openai: 'OpenAI', anthropic: 'Anthropic/Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider]} API key (optional; press Enter to use offline fallbacks):`),
+      React.createElement(Text, { key: 'billing' }, 'Provider API use may require billing or credits. The key is stored in this project’s ignored .env file.'),
+      React.createElement(PasswordInput, {
         key: 'input',
-        placeholder: 'gsk_...',
+        placeholder: 'API key',
         onSubmit: (value) => finish(workspaceUrl, value.trim())
       })
     ])
@@ -117,8 +135,16 @@ async function fallbackPrompt({ root }) {
     const mode = await question(rl, 'How do you primarily work? sequential/parallel/both', 'both')
     const backend = await question(rl, 'Where should state live? local/cloud', 'local')
     const workspaceUrl = backend === 'cloud' ? await question(rl, 'ideOS workspace URL', '') : ''
-    const groqKey = await question(rl, 'Enter your Groq API key (optional)', '')
-    return { mode, selected, backend, workspaceUrl, groqKey }
+    const providerLabels = { groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic/Claude', openrouter: 'OpenRouter', none: 'offline fallbacks' }
+    let aiProvider
+    while (!aiProvider) {
+      const provider = (await question(rl, 'Which AI provider should ideOS use? groq/openai/anthropic/openrouter/none', 'none')).toLowerCase()
+      if (Object.hasOwn(providerLabels, provider)) aiProvider = provider
+      else console.log('Choose groq, openai, anthropic, openrouter, or none.')
+    }
+    const aiApiKey = ''
+    if (aiProvider !== 'none') console.log(`Add IDEOS_AI_API_KEY to the ignored .env file to enable ${providerLabels[aiProvider]}; this non-interactive prompt does not collect secrets.`)
+    return { mode, selected, backend, workspaceUrl, aiProvider, aiApiKey }
   } finally {
     rl.close()
   }
@@ -129,10 +155,11 @@ async function question(rl, prompt, fallback) {
   return answer.trim() || fallback
 }
 
-export async function promptResume({ ides }) {
-  if (!process.stdin.isTTY) return ides[0]?.value || 'cursor'
+export async function promptResume({ ides, preferred }) {
+  const orderedIdes = [...ides].sort((a, b) => Number(b.value === preferred) - Number(a.value === preferred))
+  if (!process.stdin.isTTY) return preferred || orderedIdes[0]?.value || 'cursor'
   return new Promise((resolve) => {
-    const app = render(React.createElement(ResumeWizard, { ides, onDone: (value) => {
+    const app = render(React.createElement(ResumeWizard, { ides: orderedIdes, onDone: (value) => {
       resolve(value)
       app.unmount()
     } }))
@@ -155,28 +182,44 @@ function ResumeWizard({ ides, onDone }) {
 }
 
 export function launchIDE(ideId, dir) {
-  let cmd = ''
-  if (process.platform === 'darwin') {
-    if (ideId === 'cursor') cmd = `open -a "Cursor" "${dir}"`
-    else if (ideId === 'windsurf') cmd = `open -a "Windsurf" "${dir}"`
-    else if (ideId === 'zed') cmd = `open -a "Zed" "${dir}"`
-    else if (ideId === 'trae') cmd = `open -a "Trae" "${dir}"`
-    else if (ideId === 'antigravity') cmd = `open -a "Antigravity" "${dir}"`
-    else if (ideId === 'qcoder') cmd = `open -a "Qoder" "${dir}"`
-    else cmd = `code "${dir}"`
-  } else {
-    // Windows or Linux
-    if (ideId === 'cursor') cmd = `cursor "${dir}"`
-    else if (ideId === 'windsurf') cmd = `windsurf "${dir}"`
-    else if (ideId === 'zed') cmd = `zed "${dir}"`
-    else if (ideId === 'trae') cmd = `trae "${dir}"`
-    else if (ideId === 'antigravity') cmd = `antigravity "${dir}"`
-    else if (ideId === 'qcoder') cmd = `qoder "${dir}"`
-    else cmd = `code "${dir}"`
+  const cliCommands = {
+    cursor: 'cursor',
+    windsurf: 'windsurf',
+    zed: 'zed',
+    trae: 'trae',
+    antigravity: 'antigravity',
+    qcoder: 'qoder',
+    codex: 'codex',
+    'claude-code': 'claude',
+    freebuff: 'freebuff'
   }
-  exec(cmd, (err) => {
-    if (err) {
-      console.error(`Failed to launch IDE: ${err.message}`)
-    }
+  const appNames = {
+    cursor: 'Cursor',
+    windsurf: 'Windsurf',
+    zed: 'Zed',
+    trae: 'Trae',
+    antigravity: 'Antigravity',
+    qcoder: 'Qoder'
+  }
+  const command = cliCommands[ideId] || 'code'
+  const cliOnly = ['codex', 'claude-code', 'freebuff'].includes(ideId)
+  const args = cliOnly ? [] : [dir]
+  let child
+
+  if (process.platform === 'darwin' && appNames[ideId]) {
+    child = spawn('open', ['-a', appNames[ideId], dir], { detached: true, stdio: 'ignore' })
+  } else if (process.platform === 'win32') {
+    const script = 'if ($args[0] -in @("codex", "claude", "freebuff")) { Start-Process -FilePath $args[0] -WorkingDirectory $args[1] } else { Start-Process -FilePath $args[0] -ArgumentList "." -WorkingDirectory $args[1] }'
+    child = spawn('powershell.exe', ['-NoProfile', '-Command', script, command, dir], { detached: true, stdio: 'ignore' })
+  } else {
+    child = spawn(command, args, { cwd: dir, detached: true, stdio: 'ignore' })
+  }
+
+  child.once('error', (error) => {
+    console.error(`Failed to launch ${ideId}: ${error.message}`)
   })
+  child.once('exit', (code) => {
+    if (code !== 0 && code !== null) console.error(`Failed to launch ${ideId} (exit ${code}).`)
+  })
+  child.unref()
 }

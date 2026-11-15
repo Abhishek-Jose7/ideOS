@@ -134,7 +134,9 @@ export function renderResume(stateOrStore) {
   const latest = featureCheckpoints[0]
   
   const done = featureCheckpoints.flatMap((c) => c.summary ? [c.summary] : []).slice(0, 3)
-  const remaining = featureCheckpoints.flatMap((c) => c.next_steps || []).slice(0, 4)
+  const remaining = feature.status === 'done'
+    ? []
+    : featureCheckpoints.flatMap((c) => c.next_steps || []).slice(0, 4)
   const blockers = featureCheckpoints.flatMap((c) => c.blockers || []).slice(0, 3)
   const files = [...new Set(featureCheckpoints.flatMap((c) => c.files_touched || []))].slice(0, 6)
   
@@ -186,10 +188,7 @@ export function renderResume(stateOrStore) {
     '  Other features:',
     ...otherLines,
     '',
-    '  Open in:',
-    '  ❯ Cursor',
-    '    Windsurf',
-    '    KiloCode'
+    ''
   ].join('\n')
 }
 
@@ -216,7 +215,9 @@ export function renderExplain(stateOrStore, query) {
   const files = [...new Set(checkpoints.flatMap((c) => c.files_touched || []))].slice(0, 12)
   
   const completed = checkpoints.slice(0, 8).map((c) => `→ ${c.summary}`)
-  const remaining = unique(checkpoints.flatMap((c) => c.next_steps || [])).map((step) => `→ ${step}`)
+  const remaining = feature.status === 'done'
+    ? []
+    : unique(checkpoints.flatMap((c) => c.next_steps || [])).map((step) => `→ ${step}`)
   const decisionLines = decisions.map((d) => `→ ${pad(d.key, 22)} ${d.value}`)
   
   let statusStr = 'Planning'
@@ -435,7 +436,7 @@ export function renderDashboard(stateOrStore) {
     wrap('  Decisions'),
     ...decisionLines.map(line => wrap('  ' + line)),
     wrap(''),
-    wrap(`  Last snapshot: ${lastSnapshotStr} ago`),
+    wrap(`  Last snapshot: ${lastSnapshotStr}`),
     wrap(''),
     wrap('  [e] explain  [t] timeline  [r] resume  [q] quit'),
     bottom

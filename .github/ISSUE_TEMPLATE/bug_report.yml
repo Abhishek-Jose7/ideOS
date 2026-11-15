@@ -1,0 +1,80 @@
+name: "🐛 Bug Report"
+description: "File an issue if something is broken, crashing, or misbehaving."
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue with ideOS! Please provide as much detail as possible.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug.
+      placeholder: "When running 'ideos resume', the following error occurred..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this problem?
+      placeholder: |
+        1. Run 'ideos init'
+        2. Select 'Cursor'
+        3. Run 'ideos checkpoint test --progress 50'
+        4. See error...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen instead?
+      placeholder: "I expected the checkpoint to save cleanly to SQLite."
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - "Windows"
+        - "macOS"
+        - "Linux"
+        - "WSL (Windows Subsystem for Linux)"
+        - "Other"
+    validations:
+      required: true
+  - type: input
+    id: ideos-version
+    attributes:
+      label: ideOS CLI Version
+      description: Run `ideos version` or `npm list -g ideos-cli`
+      placeholder: "0.1.4"
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js Version
+      description: Run `node -v`
+      placeholder: "v20.x or v22.x"
+    validations:
+      required: false
+  - type: input
+    id: ides-used
+    attributes:
+      label: AI IDEs / Editors Involved
+      placeholder: "Cursor, Windsurf, Claude Code, Trae, etc."
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Output & Logs
+      description: Paste any terminal logs or the output of `ideos doctor`.
+      render: shell
+    validations:
+      required: false

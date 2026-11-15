@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+import dotenv from 'dotenv'
 import readline from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import { adapterInventory, adapters, writeAgents } from './adapters.js'
@@ -14,10 +15,12 @@ import { renderDashboard, renderExplain, renderHandoff, renderResume, renderTime
 import { lastCommitSummary, recentFiles, git } from './git.js'
 import { nowIso } from './time.js'
 import { promptInit, promptResume, launchIDE } from './init-prompt.js'
+import { readJson, writeJson } from './json.js'
 
 const args = process.argv.slice(2)
 const command = args[0] || 'help'
 const root = projectRoot()
+dotenv.config({ path: path.join(root, '.env'), override: false, quiet: true })
 
 try {
   await main()
@@ -72,11 +75,25 @@ async function main() {
         })
       }
       const inv = adapterInventory(root)
-      let activeAdps = inv.filter((item) => item.configured)
-      if (activeAdps.length === 0) activeAdps = inv.filter((item) => item.detected)
-      if (activeAdps.length === 0) activeAdps = inv
+      let activeAdps = inv.filter((item) => item.transport !== 'manual' && item.configured && item.detected)
+      if (activeAdps.length === 0) activeAdps = inv.filter((item) => item.transport !== 'manual' && item.detected)
+      if (activeAdps.length === 0) activeAdps = inv.filter((item) => item.transport !== 'manual' && item.configured)
+      if (activeAdps.length === 0) activeAdps = inv.filter((item) => item.transport !== 'manual')
       const choices = activeAdps.map((item) => ({ label: item.name, value: item.id }))
-      const selectedIde = await promptResume({ ides: choices })
+      const preferencesPath = path.join(ideosDir(root), 'preferences.json')
+      const savedPreference = readJson(preferencesPath, {})?.preferredIDE
+      const requestedPreference = flagValue('--ide') || process.env.IDEOS_PREFERRED_IDE || savedPreference
+      if (requestedPreference && !choices.some((choice) => choice.value === requestedPreference)) {
+        throw new Error(`IDE '${requestedPreference}' is not available in this workspace. Run 'ideos ides' to see configured options.`)
+      }
+      if (!process.stdin.isTTY && !requestedPreference) {
+        console.log('Run `ideos resume --ide <id>` or set IDEOS_IDE to choose an IDE without a terminal.')
+        break
+      }
+      const selectedIde = flagValue('--ide') || process.env.IDEOS_PREFERRED_IDE || (!process.stdin.isTTY ? requestedPreference : null)
+        || await promptResume({ ides: choices, preferred: requestedPreference })
+      fs.mkdirSync(ideosDir(root), { recursive: true })
+      writeJson(preferencesPath, { preferredIDE: selectedIde })
       console.log(`\nOpening in ${selectedIde}...`)
       launchIDE(selectedIde, root)
       break
@@ -156,29 +173,9 @@ async function startDashboard() {
     console.log(await render())
     return
   }
-  const rl = readline.createInterface({ input, output })
-  try {
-    while (true) {
-      console.clear()
-      console.log(await render())
-      const answer = (await rl.question('\n[e] explain  [t] timeline  [r] resume  [q] quit > ')).trim().toLowerCase()
-      if (answer === 'q') return
-      if (answer === 'r') {
-        console.clear()
-        console.log(useCloudBackend() ? renderResume(await cloudCall('/state')) : await withStore((store) => renderResume(store)))
-        await rl.question('\nPress Enter to return.')
-      }
-      if (answer === 'e' || answer === 't') {
-        const feature = await rl.question('Feature id/name: ')
-        console.clear()
-        if (answer === 'e') console.log(useCloudBackend() ? renderExplain(await cloudCall('/state'), feature) : await withStore((store) => renderExplain(store, feature)))
-        if (answer === 't') console.log(useCloudBackend() ? renderTimeline(await cloudCall('/state'), feature) : await withStore((store) => renderTimeline(store, feature)))
-        await rl.question('\nPress Enter to return.')
-      }
-    }
-  } finally {
-    rl.close()
-  }
+  const { launchDashboard } = await import('./dashboard.js')
+  const app = launchDashboard(root)
+  await app.waitUntilExit()
 }
 
 async function withStore(fn) {
@@ -202,18 +199,21 @@ async function init() {
       }
     } finally {
       rl.close()
+      // readline pauses shared stdin on close; Ink needs it resumed to keep the
+      // interactive wizard's key handlers alive after the re-init confirmation.
+      if (process.stdin.isTTY) process.stdin.resume()
     }
   }
 
   const options = hasFlag('--yes')
-    ? { selected: adapters.map((adapter) => adapter.id), backend: 'local', mode: 'both', groqKey: '' }
+    ? { selected: adapters.filter((adapter) => adapter.detectSystem?.()).map((adapter) => adapter.id), backend: 'local', mode: 'both', aiProvider: process.env.IDEOS_AI_PROVIDER || (process.env.GROQ_API_KEY ? 'groq' : 'none'), aiApiKey: '' }
     : await promptInit({ root })
   const store = openStore(root)
   try {
     writeGitignore()
     writeEnvFile(root, options)
     writeAgents(root)
-    installGitHook()
+    const gitHookInstalled = installGitHook()
     exportState(store)
     const selected = new Set(options.selected || adapters.map((adapter) => adapter.id))
     for (const adapter of adapters.filter((adapter) => selected.has(adapter.id))) {
@@ -221,9 +221,10 @@ async function init() {
     }
     const verified = adapters.filter((adapter) => selected.has(adapter.id)).map((adapter) => ({
       name: adapter.name,
-      detected: adapter.detect(root),
+      detected: adapter.detectSystem(),
       installed: true,
-      verified: adapter.verify(root)
+      verified: adapter.verify(root),
+      manual: adapter.transport === 'manual'
     }))
     if (options.backend === 'cloud') {
       writeCloudEnvNotice(options.workspaceUrl)
@@ -237,6 +238,12 @@ async function init() {
     console.log('  --------------------------------------------------')
     console.log(`  \x1b[1mMode:\x1b[0m       ${options.mode || 'both'}`)
     console.log(`  \x1b[1mBackend:\x1b[0m    ${options.backend === 'cloud' ? 'Cloud' : 'Local SQLite Database'}`)
+    const aiProvider = options.aiProvider || process.env.IDEOS_AI_PROVIDER || (process.env.GROQ_API_KEY ? 'groq' : 'none')
+    const providerKeys = { groq: process.env.GROQ_API_KEY, openai: process.env.OPENAI_API_KEY, anthropic: process.env.ANTHROPIC_API_KEY, openrouter: process.env.OPENROUTER_API_KEY }
+    const hasProviderKey = aiProvider !== 'none' && Boolean(options.aiApiKey || process.env.IDEOS_AI_API_KEY || providerKeys[aiProvider])
+    console.log(`  \x1b[1mAI provider:\x1b[0m ${aiProvider}${hasProviderKey ? '' : ' (no key; offline fallbacks)'}`)
+    if (!hasProviderKey) console.log('  AI summaries/normalization use offline fallbacks; MCP and IDE setup are unaffected.')
+    if (options.backend === 'cloud' && hasProviderKey) console.log('  Cloud AI also needs this provider/key configured as Worker secrets; project .env is not sent to it.')
     if (options.backend === 'cloud') {
       console.log(`  \x1b[1mURL:\x1b[0m        ${options.workspaceUrl || 'Not configured'}`)
     } else {
@@ -245,18 +252,25 @@ async function init() {
     console.log('')
     console.log('  \x1b[1m\x1b[36m⚡ EXTENSIONS & RULES INSTALLED\x1b[0m')
     console.log('  --------------------------------------------------')
-    console.log('  \x1b[32m✔\x1b[0m Git hooks installed (post-commit automatic snapshots)')
-    console.log('  \x1b[32m✔\x1b[0m Layer 1 MCP config files written & verified')
+    if (gitHookInstalled) {
+      console.log('  \x1b[32m✔\x1b[0m Git hooks installed (post-commit automatic snapshots)')
+    } else {
+      console.log('  \x1b[33m○\x1b[0m Git hook skipped (initialize Git to enable post-commit snapshots)')
+    }
+    console.log('  \x1b[32m✔\x1b[0m Layer 1 MCP config files written and checked')
     console.log('  \x1b[32m✔\x1b[0m Layer 2 IDE rules instructions written (.cursor/rules, etc.)')
     console.log('  \x1b[32m✔\x1b[0m Context files initialized (.ideos/AGENTS.md, context.md)')
     console.log('')
     console.log('  \x1b[1m\x1b[36m🔌 CONFIGURED IDE ADAPTERS\x1b[0m')
     console.log('  --------------------------------------------------')
     for (const result of verified) {
-      if (result.verified) {
-        console.log(`  \x1b[32m✔\x1b[0m Configured & Verified   ${result.name}`)
+      if (result.verified && result.manual) {
+        console.log(`  \x1b[33m○\x1b[0m Setup snippet generated  ${result.name} (add it in app settings)`)
+      } else if (result.verified) {
+        const detectedText = result.detected ? 'installed; config checked' : 'config checked; app not detected'
+        console.log(`  \x1b[32m✔\x1b[0m Configured             ${result.name} (${detectedText})`)
       } else if (result.installed) {
-        console.log(`  \x1b[33m○\x1b[0m Configured (Unverified) ${result.name}`)
+        console.log(`  \x1b[33m○\x1b[0m Configured (check needed) ${result.name}`)
       } else {
         console.log(`  \x1b[90m-\x1b[0m Skipped                 ${result.name}`)
       }
@@ -264,10 +278,11 @@ async function init() {
     console.log('')
     console.log('  \x1b[1m\x1b[33m⚠ IMPORTANT ACTION REQUIRED\x1b[0m')
     console.log('  --------------------------------------------------')
-    console.log('  ideOS verified configuration files, but you must open your')
-    console.log('  IDE once to enable/authorize the MCP server:')
-    console.log('  1. Open your configured IDE (e.g. Cursor, Windsurf, Trae, etc.).')
-    console.log('  2. Verify that the "ideos" MCP server is active/running.')
+    console.log('  Config files were checked; this does not prove the IDE is signed in')
+    console.log('  or that MCP connected. Open each IDE, sign in, then reopen this project.')
+    console.log('  Approve/enable the ideOS MCP server if the IDE asks, and confirm it is running.')
+    console.log('  Freebuff Desktop: paste .ideos/freebuff-desktop-mcp.json in Settings > MCP.')
+    console.log('  If an installed IDE is missing, run `ideos detect` and report its app name.')
     console.log('')
     console.log('  \x1b[1m\x1b[32m🚀 NEXT STEPS — START DEVELOPING\x1b[0m')
     console.log('  --------------------------------------------------')
@@ -276,6 +291,23 @@ async function init() {
     console.log('  \x1b[1mideos explain\x1b[0m     → Get a deep explain summary of project state')
     console.log('  \x1b[1mideos detect\x1b[0m      → Re-scan laptop for installed IDEs')
     console.log('')
+
+    // Auto-offer import when git history exists
+    const hasGitHistory = git(['log', '-1', '--pretty=%H'], '')
+    if (hasGitHistory && process.stdin.isTTY && !hasFlag('--yes')) {
+      const rl2 = readline.createInterface({ input, output })
+      try {
+        const answer = await rl2.question('  \x1b[1m\x1b[36m📦 Git history detected.\x1b[0m Run \x1b[1mideos import\x1b[0m to analyze your project? (Y/n): ')
+        if (answer.trim().toLowerCase() !== 'n') {
+          console.log('')
+          await importCommand()
+        }
+      } finally {
+        rl2.close()
+      }
+    } else if (hasGitHistory && hasFlag('--yes')) {
+      await importCommand()
+    }
   } finally {
     store.db.close()
   }
@@ -370,7 +402,7 @@ async function remember() {
     const normalized = await normalizeDecision({ prompt, key, value, feature, features })
     const finalKey = normalized?.key || key
     const finalValue = normalized?.value || value
-    if (!finalKey || !finalValue) throw new Error('Prompt-only remember requires GROQ_API_KEY. Or pass explicit <key> <value>.')
+    if (!finalKey || !finalValue) throw new Error('Prompt-only remember requires a configured AI provider. Or pass explicit <key> <value>.')
     const finalFeature = normalized?.feature || feature
     const featureRow = finalFeature ? ensureFeature(store, finalFeature) : null
     store.db.prepare('INSERT INTO decisions (id, feature_id, key, value, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -413,8 +445,9 @@ async function done() {
     const feature = ensureFeature(store, featureName)
     const summary = flagValue('--summary') || 'Feature complete'
     const now = nowIso()
-    store.db.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').run('done', now, feature.id)
     insertCheckpoint(store, { feature: feature.id, summary, progress: 100, source: 'manual' })
+    store.db.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').run('done', now, feature.id)
+    exportState(store)
     console.log(`${feature.name} marked done.`)
   })
 }
@@ -444,15 +477,17 @@ async function doctor() {
 
   if (useCloudBackend()) {
     const health = await cloudCall('/health')
+    await cloudCall('/state')
     console.log(`Backend: cloud`)
     console.log(`Health: ${health.ok ? 'ok' : 'failed'}`)
+    console.log('Authentication: ok')
     return
   }
 
   console.log('Checking .gitignore...')
   const gitignorePath = path.join(root, '.gitignore')
   const gitignoreContent = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8') : ''
-  const missingGitignore = ['.ideos/db.sqlite', '.ideos/db.sqlite-*', '.env'].filter(item => !gitignoreContent.split(/\r?\n/).includes(item))
+  const missingGitignore = ['.ideos/db.sqlite', '.ideos/db.sqlite-*', '.ideos/preferences.json', '.env'].filter(item => !gitignoreContent.split(/\r?\n/).includes(item))
   if (missingGitignore.length > 0) {
     if (fix) {
       writeGitignore()
@@ -465,23 +500,30 @@ async function doctor() {
   }
 
   console.log('Checking git hooks...')
-  const postCommitPath = path.join(root, '.git', 'hooks', 'post-commit')
-  let hookOk = fs.existsSync(postCommitPath)
-  if (hookOk) {
-    const content = fs.readFileSync(postCommitPath, 'utf8')
-    if (!content.includes('# ideOS checkpoint')) {
-      hookOk = false
-    }
-  }
-  if (!hookOk) {
-    if (fix) {
-      installGitHook()
-      console.log('  [FIXED] post-commit git hook installed')
-    } else {
-      console.log('  [FAIL] post-commit git hook is missing or stale. Run with --fix to repair.')
-    }
+  const gitHooksPath = gitPath('rev-parse', '--git-path', 'hooks')
+  if (!gitHooksPath) {
+    console.log('  [SKIP] Git repository not initialized; initialize Git to enable post-commit snapshots.')
   } else {
-    console.log('  [OK] post-commit git hook verified')
+    const postCommitPath = path.resolve(root, gitPath('rev-parse', '--git-path', 'hooks/post-commit') || path.join(gitHooksPath, 'post-commit'))
+    let hookOk = fs.existsSync(postCommitPath)
+    if (hookOk) {
+      const content = fs.readFileSync(postCommitPath, 'utf8')
+      if (!content.includes('# ideOS checkpoint')) {
+        hookOk = false
+      }
+    }
+    if (!hookOk) {
+      if (fix) {
+        hookOk = installGitHook()
+        console.log(hookOk
+          ? '  [FIXED] post-commit git hook installed'
+          : '  [FAIL] Could not install the post-commit git hook.')
+      } else {
+        console.log('  [FAIL] post-commit git hook is missing or stale. Run with --fix to repair.')
+      }
+    } else {
+      console.log('  [OK] post-commit git hook verified')
+    }
   }
 
   console.log('Checking database and exports...')
@@ -508,12 +550,14 @@ async function doctor() {
       if (!item.configured) {
         if (fix) {
           adapter.install(root, { backend: 'local' })
-          console.log(`  [FIXED] Re-installed configuration for ${adapter.name}`)
+          console.log(adapter.transport === 'manual'
+            ? `  [FIXED] Regenerated setup snippet for ${adapter.name}; finish setup in the app.`
+            : `  [FIXED] Re-installed configuration for ${adapter.name}`)
         } else {
           console.log(`  [FAIL] ${adapter.name} configuration is not verified. Run with --fix to repair.`)
         }
       } else {
-        console.log(`  [OK] ${adapter.name} verified`)
+        console.log(`  [OK] ${adapter.name} config is present (sign-in/live MCP connection not checked)`)
       }
     }
   }
@@ -523,12 +567,12 @@ function listIdes() {
   console.log('ideOS IDE adapters')
   console.log('')
   for (const item of adapterInventory(root)) {
-    const status = item.configured ? 'configured' : item.detected ? 'detected' : 'available'
+    const status = item.detected ? (item.configured ? 'installed+configured' : 'installed') : (item.configured ? 'configured' : 'available')
     console.log(`${status.padEnd(11)} ${item.name.padEnd(14)} ${item.config}`)
   }
   console.log('')
-  console.log('Warning/Notice: configured means ideOS wrote/verified adapter files.')
-  console.log('It does NOT guarantee that the IDE is logged in or initialized.')
+  console.log('“installed” is based on a local install/path/registry check; “configured” means config exists.')
+  console.log('Neither status proves that the IDE is logged in or that its MCP connection is live.')
   console.log('You must manually open each IDE once and confirm that you are properly')
   console.log('logged in and that the MCP server is initialized and enabled.')
 }
@@ -566,10 +610,12 @@ function writeEnvFile(root, options) {
     } else {
       lines.push(`${key}=${val}`)
     }
+    process.env[key] = String(val)
   }
-  if (options.groqKey) {
-    setVar('GROQ_API_KEY', options.groqKey)
-    setVar('IDEOS_GROQ_MODEL', 'llama-3.3-70b-versatile')
+  if (options.aiProvider) setVar('IDEOS_AI_PROVIDER', options.aiProvider)
+  if (options.aiApiKey) {
+    setVar('IDEOS_AI_API_KEY', options.aiApiKey)
+    if (options.aiProvider === 'groq') setVar('IDEOS_GROQ_MODEL', 'openai/gpt-oss-120b')
   }
   setVar('IDEOS_BACKEND', options.backend)
   if (options.backend === 'cloud' && options.workspaceUrl) {
@@ -582,15 +628,18 @@ function writeGitignore() {
   const file = path.join(root, '.gitignore')
   const line = '.ideos/db.sqlite'
   const wal = '.ideos/db.sqlite-*'
+  const preferences = '.ideos/preferences.json'
   const env = '.env'
   const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
-  const additions = [line, wal, env].filter((item) => !existing.split(/\r?\n/).includes(item))
+  const additions = [line, wal, preferences, env].filter((item) => !existing.split(/\r?\n/).includes(item))
   if (additions.length) fs.appendFileSync(file, `${existing.endsWith('\n') || existing.length === 0 ? '' : '\n'}${additions.join('\n')}\n`)
 }
 
 function installGitHook() {
-  const hooks = path.join(root, '.git', 'hooks')
-  if (!fs.existsSync(hooks)) return
+  const hooksPath = gitPath('rev-parse', '--git-path', 'hooks')
+  if (!hooksPath) return false
+  const hooks = path.resolve(root, hooksPath)
+  if (!fs.existsSync(hooks)) fs.mkdirSync(hooks, { recursive: true })
   const hook = path.join(hooks, 'post-commit')
   const snippet = '\n# ideOS checkpoint\nif command -v node >/dev/null 2>&1 && [ -f "./src/cli.js" ]; then\n  node ./src/cli.js checkpoint --auto --source git_hook >/dev/null 2>&1 || true\nelif command -v ideos >/dev/null 2>&1; then\n  ideos checkpoint --auto --source git_hook >/dev/null 2>&1 || true\nfi\n'
   const existing = fs.existsSync(hook) ? fs.readFileSync(hook, 'utf8') : '#!/bin/sh\n'
@@ -601,6 +650,15 @@ function installGitHook() {
   try {
     fs.chmodSync(hook, 0o755)
   } catch {}
+  return true
+}
+
+function gitPath(...args) {
+  try {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return ''
+  }
 }
 
 function writeCloudEnvNotice(workspaceUrl) {
@@ -608,6 +666,8 @@ function writeCloudEnvNotice(workspaceUrl) {
   fs.writeFileSync(file, [
     'IDEOS_BACKEND=cloud',
     `IDEOS_WORKSPACE_URL=${workspaceUrl || 'https://your-ideos-worker.your-subdomain.workers.dev'}`,
+    'IDEOS_API_KEY=replace-with-the-same-secret-set-on-the-Worker',
+    '# Cloud AI is configured separately with Worker secrets IDEOS_AI_PROVIDER and IDEOS_AI_API_KEY.',
     ''
   ].join('\n'))
 }
@@ -625,10 +685,10 @@ function help() {
     '  ideos checkpoint <feature> --summary "..." Save progress under a feature_id',
     '  ideos claim <feature>                      Claim a feature for this worker',
     '  ideos remember <key> <value>               Store a project or feature decision',
-    '  ideos remember <key> <value> --prompt "..." Store a Groq-normalized decision',
+    '  ideos remember <key> <value> --prompt "..." Store an AI-normalized decision (if configured)',
     '  ideos recall [key]                         Retrieve decisions',
     '  ideos current-work                         Infer likely feature from branch/files',
-    '  ideos handoff <feature>                    Generate a Groq-backed handoff brief',
+    '  ideos handoff <feature>                    Generate a provider-backed handoff brief (if configured)',
     '  ideos ides                                 Show all available IDE adapters',
     '  ideos detect                               Scan laptop for installed IDEs & extensions',
     '  ideos mcp                                  Start the MCP server (stdio)',
@@ -710,7 +770,8 @@ async function resetCommand() {
 
   if (useCloudBackend()) {
     const result = await cloudCall('/tool/reset', { method: 'POST', body: { feature } })
-    console.log(`Feature ${result.reset} reset successfully.`)
+    if (result.reset) console.log(`Feature ${result.reset} reset successfully.`)
+    else console.log(`Feature ${feature} not found.`)
     return
   }
 
@@ -797,89 +858,130 @@ async function onboardCommand() {
 
 async function importCommand() {
   const limit = Number(flagValue('--limit') || 50)
-  console.log(`Analyzing last ${limit} commits in git history...`)
+
+  // Phase 1: Git history analysis
+  console.log('')
+  console.log('  \x1b[1m\x1b[36m📜 Phase 1: Git History Analysis\x1b[0m')
+  console.log('  --------------------------------------------------')
+  console.log(`  Analyzing last ${limit} commits...`)
 
   const logOutput = git(['log', `-${limit}`, '--name-only', '--pretty=format:COMMIT:%H|%cI|%an|%s'], '')
-  if (!logOutput) {
-    console.log('No git history found or git not available.')
-    return
-  }
-
   const commits = []
-  let currentCommit = null
-
-  const lines = logOutput.split(/\r?\n/)
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    if (trimmed.startsWith('COMMIT:')) {
-      if (currentCommit) commits.push(currentCommit)
-      const parts = trimmed.slice(7).split('|')
-      currentCommit = {
-        hash: parts[0],
-        date: parts[1],
-        author: parts[2],
-        message: parts[3] || '',
-        files: []
+  if (logOutput) {
+    let currentCommit = null
+    const lines = logOutput.split(/\r?\n/)
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (trimmed.startsWith('COMMIT:')) {
+        if (currentCommit) commits.push(currentCommit)
+        const parts = trimmed.slice(7).split('|')
+        currentCommit = {
+          hash: parts[0],
+          date: parts[1],
+          author: parts[2],
+          message: parts[3] || '',
+          files: []
+        }
+      } else if (currentCommit) {
+        currentCommit.files.push(trimmed)
       }
-    } else if (currentCommit) {
-      currentCommit.files.push(trimmed)
     }
+    if (currentCommit) commits.push(currentCommit)
   }
-  if (currentCommit) commits.push(currentCommit)
-
-  if (commits.length === 0) {
-    console.log('No commits parsed.')
-    return
-  }
-
-  console.log(`Found ${commits.length} commits. Clustering...`)
 
   let clustered = null
-  if (hasGroq()) {
-    const { clusterGitCommits } = await import('./groq.js')
-    clustered = await clusterGitCommits({ commits })
-  }
+  if (commits.length > 0) {
+    console.log(`  Found ${commits.length} commits. Clustering...`)
+    if (hasGroq()) {
+      const { clusterGitCommits } = await import('./groq.js')
+      clustered = await clusterGitCommits({ commits })
+    }
 
-  if (!clustered || !clustered.features) {
-    console.log('Using local heuristic clustering (Groq API not configured or failed)...')
-    const featuresMap = new Map()
-
-    for (const commit of commits) {
-      let featureName = 'general-improvements'
-      const match = commit.message.match(/^(?:feat|fix|docs|refactor|test|style|chore)\(([^)]+)\):|^([a-zA-Z0-9_-]+):/)
-      if (match) {
-        featureName = match[1] || match[2]
-      }
-
-      const featureId = idFromName(featureName)
-      if (!featuresMap.has(featureId)) {
-        featuresMap.set(featureId, {
-          id: featureId,
-          name: titleFromId(featureName),
-          description: `Imported features under ${featureName}`,
-          status: 'done',
-          checkpoints: []
+    if (!clustered || !clustered.features) {
+      console.log('  Using local heuristic clustering...')
+      const featuresMap = new Map()
+      for (const commit of commits) {
+        let featureName = 'general-improvements'
+        const match = commit.message.match(/^(?:feat|fix|docs|refactor|test|style|chore)\(([^)]+)\):|^([a-zA-Z0-9_-]+):/)
+        if (match) featureName = match[1] || match[2]
+        const featureId = idFromName(featureName)
+        if (!featuresMap.has(featureId)) {
+          featuresMap.set(featureId, {
+            id: featureId,
+            name: titleFromId(featureName),
+            description: `Imported features under ${featureName}`,
+            status: 'done',
+            checkpoints: []
+          })
+        }
+        featuresMap.get(featureId).checkpoints.push({
+          summary: commit.message,
+          progress: 100,
+          files: commit.files,
+          created_at: commit.date,
+          author: commit.author
         })
       }
-
-      featuresMap.get(featureId).checkpoints.push({
-        summary: commit.message,
-        progress: 100,
-        files: commit.files,
-        created_at: commit.date,
-        author: commit.author
-      })
+      clustered = { features: Array.from(featuresMap.values()) }
     }
-    clustered = { features: Array.from(featuresMap.values()) }
+    console.log(`  \x1b[32m✔\x1b[0m ${clustered.features.length} features from git history`)
+  } else {
+    console.log('  No git history found.')
+    clustered = { features: [] }
   }
 
-  console.log(`Importing ${clustered.features.length} features...`)
+  // Phase 2: Codebase analysis
+  console.log('')
+  console.log('  \x1b[1m\x1b[36m🔍 Phase 2: Codebase Analysis\x1b[0m')
+  console.log('  --------------------------------------------------')
+  const { analyzeRepo } = await import('./analyze.js')
+  const analysis = await analyzeRepo(root)
+
+  if (analysis.architecture.languages.length > 0) {
+    console.log(`  \x1b[32m✔\x1b[0m Languages: ${analysis.architecture.languages.slice(0, 5).map(l => `${l.language} (${l.fileCount})`).join(', ')}`)
+  }
+  if (analysis.architecture.frameworks.length > 0) {
+    console.log(`  \x1b[32m✔\x1b[0m Frameworks: ${analysis.architecture.frameworks.join(', ')}`)
+  }
+  if (analysis.activeBranches.length > 0) {
+    const featureBranches = analysis.activeBranches.filter(b => b.isFeatureBranch)
+    console.log(`  \x1b[32m✔\x1b[0m Branches: ${analysis.activeBranches.length} total, ${featureBranches.length} feature branches`)
+  }
+  if (analysis.todos.length > 0) {
+    console.log(`  \x1b[32m✔\x1b[0m Found ${analysis.todos.length} TODO/FIXME items`)
+  }
+  if (analysis.features.length > 0) {
+    console.log(`  \x1b[32m✔\x1b[0m ${analysis.features.length} active features from codebase analysis`)
+  }
+
+  // Merge analysis features into clustered features (avoid duplicates)
+  const existingIds = new Set(clustered.features.map(f => f.id))
+  for (const af of analysis.features) {
+    if (!existingIds.has(af.id)) {
+      clustered.features.push({
+        ...af,
+        checkpoints: (af.files || []).length > 0 ? [{
+          summary: af.description || `Active work: ${af.name}`,
+          progress: af.status === 'active' ? 30 : 10,
+          files: af.files || [],
+          created_at: nowIso(),
+          author: process.env.USERNAME || process.env.USER || 'developer'
+        }] : []
+      })
+      existingIds.add(af.id)
+    }
+  }
+
+  // Phase 3: Persist to database
+  console.log('')
+  console.log('  \x1b[1m\x1b[36m💾 Phase 3: Persisting to Database\x1b[0m')
+  console.log('  --------------------------------------------------')
 
   if (useCloudBackend()) {
     for (const f of clustered.features) {
       await cloudCall('/tool/claim', { method: 'POST', body: { feature: f.id } })
-      for (const cp of f.checkpoints) {
+      for (const cp of (f.checkpoints || [])) {
         await cloudCall('/tool/checkpoint', {
           method: 'POST',
           body: {
@@ -888,7 +990,7 @@ async function importCommand() {
             progress: cp.progress,
             files_touched: cp.files,
             source: 'git_hook',
-            worker_id: `git:${cp.author.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')}`
+            worker_id: `git:${(cp.author || 'developer').toLowerCase().replace(/[^a-z0-9:.-]/g, '-')}`
           }
         })
       }
@@ -900,27 +1002,49 @@ async function importCommand() {
           store.db.prepare(`
             INSERT OR IGNORE INTO features (id, name, description, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
-          `).run(f.id, f.name, f.description || '', f.status || 'done', f.checkpoints[f.checkpoints.length - 1]?.created_at || nowIso(), f.checkpoints[0]?.created_at || nowIso())
+          `).run(f.id, f.name, f.description || '', f.status || 'done', f.checkpoints?.[f.checkpoints.length - 1]?.created_at || nowIso(), f.checkpoints?.[0]?.created_at || nowIso())
 
-          for (const cp of f.checkpoints) {
-            const workerId = `git:${cp.author.toLowerCase().replace(/[^a-z0-9:.-]/g, '-')}`
+          for (const cp of (f.checkpoints || [])) {
+            const workerId = `git:${(cp.author || 'developer').toLowerCase().replace(/[^a-z0-9:.-]/g, '-')}`
             store.db.prepare(`
               INSERT OR IGNORE INTO workers (id, name, ide)
               VALUES (?, ?, 'git')
-            `).run(workerId, cp.author)
+            `).run(workerId, cp.author || 'developer')
 
             store.db.prepare(`
               INSERT INTO checkpoints (id, feature_id, worker_id, summary, progress, files_touched, blockers, next_steps, source, created_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'git_hook', ?)
-            `).run(crypto.randomUUID(), f.id, workerId, cp.summary, cp.progress, JSON.stringify(cp.files), '[]', '[]', cp.created_at)
+            `).run(crypto.randomUUID(), f.id, workerId, cp.summary, cp.progress, JSON.stringify(cp.files || []), '[]', '[]', cp.created_at || nowIso())
           }
+        }
+
+        // Persist analysis decisions
+        for (const d of analysis.decisions) {
+          store.db.prepare(`
+            INSERT OR IGNORE INTO decisions (id, feature_id, key, value, created_by, created_at)
+            VALUES (?, NULL, ?, ?, ?, ?)
+          `).run(crypto.randomUUID(), d.key, d.value, `import:${d.source || 'analyze'}`, nowIso())
         }
       })()
       exportState(store)
     })
   }
 
-  console.log('  ✓ Git history import completed successfully.')
+  // Summary
+  const activeFeatures = clustered.features.filter(f => f.status === 'active' || f.status === 'planning')
+  const doneFeatures = clustered.features.filter(f => f.status === 'done')
+  console.log('')
+  console.log('  \x1b[1m\x1b[32m✓ Import completed successfully\x1b[0m')
+  console.log('  --------------------------------------------------')
+  console.log(`  \x1b[1m${clustered.features.length}\x1b[0m features total (\x1b[32m${activeFeatures.length} active\x1b[0m, \x1b[90m${doneFeatures.length} done\x1b[0m)`)
+  console.log(`  \x1b[1m${analysis.decisions.length}\x1b[0m architecture decisions recorded`)
+  console.log(`  \x1b[1m${analysis.todos.length}\x1b[0m TODO/FIXME items found`)
+  if (analysis.activeBranches.filter(b => b.isFeatureBranch).length > 0) {
+    console.log(`  \x1b[1m${analysis.activeBranches.filter(b => b.isFeatureBranch).length}\x1b[0m feature branches detected as active work`)
+  }
+  console.log('')
+  console.log('  Run \x1b[1mideos start\x1b[0m to see the interactive dashboard.')
+  console.log('')
 }
 
 function subcommandHelp(cmd) {
@@ -934,9 +1058,12 @@ function subcommandHelp(cmd) {
       '  --yes  Automate prompts and use default settings'
     ],
     resume: [
-      'Usage: ideos resume',
+      'Usage: ideos resume [--ide <id>]',
       '',
-      'Continue where you left off by opening your IDE at the active feature.'
+      'Continue where you left off by opening your preferred or selected IDE.',
+      '',
+      'Flags:',
+      '  --ide <id>  Open a specific configured IDE (also accepted via IDEOS_PREFERRED_IDE)'
     ],
     start: [
       'Usage: ideos start [--once]',
@@ -986,7 +1113,7 @@ function subcommandHelp(cmd) {
       '',
       'Flags:',
       '  --feature <id>    Associate the decision with a specific feature',
-      '  --prompt "..."    Normalize decision content using Groq LLM'
+      '  --prompt "..."    Normalize decision content using the configured AI provider'
     ],
     recall: [
       'Usage: ideos recall [key] [--feature <id>]',

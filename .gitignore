@@ -3,3 +3,4 @@ node_modules/
 .dev.vars
 .ideos/db.sqlite
 .ideos/db.sqlite-*
+.ideos/preferences.json

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import 'dotenv/config'
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import path from 'node:path'
+import dotenv from 'dotenv'
 import { cloudCall, useCloudBackend } from './cloud-client.js'
 import { ensureFeature, exportState, insertCheckpoint, openStore } from './db.js'
 import { currentBranch, recentFiles } from './git.js'
@@ -15,6 +15,7 @@ import { nowIso } from './time.js'
 
 const workspace = process.env.IDEOS_WORKSPACE
 const root = workspace ? path.resolve(workspace, '..') : process.cwd()
+dotenv.config({ path: path.join(root, '.env'), override: false, quiet: true })
 
 const server = new McpServer({
   name: 'ideos',
@@ -139,14 +140,19 @@ server.registerTool(
     description: 'Return full project state from this IDE perspective.',
     inputSchema: {}
   },
-  async () => withStore((store) => {
-    if (useCloudBackend()) return cloudCall('/state').then(json)
+  async () => {
+    if (useCloudBackend()) {
+      const state = await cloudCall('/state')
+      return json({ ...state, my_context: renderResume(state) })
+    }
+    return withStore((store) => {
     const features = store.db.prepare('SELECT * FROM features ORDER BY updated_at DESC').all()
     const active_workers = store.db.prepare('SELECT * FROM workers ORDER BY last_heartbeat DESC').all()
     const decisions = store.db.prepare('SELECT * FROM decisions ORDER BY created_at DESC').all()
     const recent_activity = store.db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 20').all()
     return json({ features, active_workers, decisions, recent_activity, my_context: renderResume(store) })
-  })
+    })
+  }
 )
 
 server.registerTool(
@@ -214,7 +220,7 @@ server.registerTool(
     const normalized = await normalizeDecision({ prompt, key, value, feature, features })
     const finalKey = normalized?.key || key
     const finalValue = normalized?.value || value
-    if (!finalKey || !finalValue) return json({ error: 'ideos_remember needs key/value or a prompt that Groq can normalize.' })
+    if (!finalKey || !finalValue) return json({ error: 'ideos_remember needs key/value or a prompt that a configured AI provider can normalize.' })
     const targetFeature = normalized?.feature || feature
     const target = targetFeature ? ensureFeature(store, targetFeature) : null
     store.db.prepare('INSERT INTO decisions (id, feature_id, key, value, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -236,7 +242,11 @@ server.registerTool(
     }
   },
   async ({ key, feature } = {}) => {
-    if (useCloudBackend()) return json(await cloudCall('/state'))
+    if (useCloudBackend()) {
+      const state = await cloudCall('/state')
+      const rows = (state.decisions || []).filter((decision) => (!key || decision.key === key) && (!feature || decision.feature_id === feature))
+      return json(rows)
+    }
     return withStore((store) => {
     const rows = key
       ? store.db.prepare('SELECT * FROM decisions WHERE key = ? ORDER BY created_at DESC').all(key)
@@ -299,8 +309,9 @@ server.registerTool(
     if (useCloudBackend()) return json(await cloudCall('/tool/done', { method: 'POST', body: { feature, summary } }))
     return withStore((store) => {
     const row = ensureFeature(store, feature)
-    store.db.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').run('done', nowIso(), row.id)
     insertCheckpoint(store, { feature: row.id, summary, progress: 100, source: 'manual' })
+    store.db.prepare('UPDATE features SET status = ?, updated_at = ? WHERE id = ?').run('done', nowIso(), row.id)
+    exportState(store)
     return json({ done: row.id })
     })
   }

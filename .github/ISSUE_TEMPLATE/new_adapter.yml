@@ -1,0 +1,62 @@
+name: "🔌 New IDE / Tool Adapter"
+description: "Request or propose support for a new AI IDE, editor, or coding agent."
+title: "[Adapter]: Support <IDE or Tool Name>"
+labels: ["adapter", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping expand ideOS's IDE support ecosystem!
+        Please fill out this form with whatever details you know. If you are willing to submit a PR, check out our [Contributing Guide](https://github.com/Abhishek-Jose7/ideOS/blob/main/CONTRIBUTING.md#adding-a-new-ide-adapter).
+  - type: input
+    id: tool-name
+    attributes:
+      label: IDE / Tool Name
+      description: What is the official name of the IDE or tool?
+      placeholder: "e.g., Aider, Goose, OpenCode, Junie, JetBrains AI"
+    validations:
+      required: true
+  - type: input
+    id: tool-url
+    attributes:
+      label: Website or Repository Link
+      description: Where can people learn more or install this tool?
+      placeholder: "https://..."
+    validations:
+      required: true
+  - type: dropdown
+    id: pricing
+    attributes:
+      label: Pricing / Availability Model
+      description: Does this tool have a free tier or require BYOK (Bring Your Own Key)?
+      options:
+        - "Free / Open Source"
+        - "Free Tier Available"
+        - "BYOK (Bring Your Own API Key)"
+        - "Paid / Subscription Only"
+        - "Unsure / Other"
+    validations:
+      required: true
+  - type: textarea
+    id: mcp-config-path
+    attributes:
+      label: MCP Configuration Location
+      description: Where does this tool read MCP server configuration?
+      placeholder: "e.g. ~/.tool/mcp.json, .vscode/mcp.json, or custom environment variables"
+    validations:
+      required: false
+  - type: textarea
+    id: binary-launch
+    attributes:
+      label: Launch Command & Executable
+      description: How is this tool launched from the terminal, and where is it typically installed on Windows / macOS / Linux?
+      placeholder: "e.g., command: 'aider', default path: '/usr/local/bin/aider'"
+    validations:
+      required: false
+  - type: checkboxes
+    id: willingness
+    attributes:
+      label: Implementation
+      options:
+        - label: "I am willing to submit a Pull Request to add this adapter! (See CONTRIBUTING.md)"
+          required: false

@@ -318,13 +318,13 @@ Local (default):
   Storage:    .ideos/db.sqlite
   For:        solo, one machine
 
-Cloud (set IDEOS_BACKEND=cloud + IDEOS_WORKSPACE_URL=...):
-  Transport:  HTTP SSE
+Cloud (set IDEOS_BACKEND=cloud + IDEOS_WORKSPACE_URL + IDEOS_API_KEY):
+  Transport:  authenticated JSON over HTTPS
   Storage:    Cloudflare D1
-  For:        teams, multiple machines
+  For:        one shared team workspace per Worker/D1 deployment
 ```
 
-Same MCP tools. Same schema. Same everything. One environment variable switches between them. The cloud backend is a Cloudflare Worker wrapping the same business logic with D1 instead of SQLite.
+The cloud backend is a Cloudflare Worker with D1 storage. Every data and write route requires the bearer API key; `/health` is public. Store the key as a Worker secret with `wrangler secret put IDEOS_API_KEY` and in the project's ignored `.env` file. Use a different Worker/D1 deployment and key for each team. There is no multi-tenant account or role system.
 
 ---
 

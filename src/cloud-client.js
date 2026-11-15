@@ -9,9 +9,11 @@ export function cloudUrl() {
 export async function cloudCall(path, { method = 'GET', body } = {}) {
   const base = cloudUrl()
   if (!base) throw new Error('IDEOS_BACKEND=cloud requires IDEOS_WORKSPACE_URL.')
+  const apiKey = process.env.IDEOS_API_KEY
+  if (!apiKey) throw new Error('IDEOS_BACKEND=cloud requires IDEOS_API_KEY. Configure the same key on the Worker and in this project.')
   const response = await fetch(new URL(path, base), {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: body ? JSON.stringify(body) : undefined
   })
   if (!response.ok) throw new Error(`Cloud backend ${response.status}: ${await response.text()}`)
