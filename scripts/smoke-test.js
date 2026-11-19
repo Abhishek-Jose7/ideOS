@@ -9,7 +9,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ideos-smoke-'))
 const cli = path.join(repo, 'src', 'cli.js')
-const mcp = path.join(repo, 'src', 'mcp.js')
+
+execFileSync(process.execPath, [path.join(repo, 'scripts', 'doctor-test.js')], { stdio: 'inherit' })
 
 function run(args) {
   return execFileSync(process.execPath, [cli, ...args], { cwd: tmp, encoding: 'utf8' })

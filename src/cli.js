@@ -155,7 +155,7 @@ async function main() {
       await seedDemo()
       break
     case 'doctor':
-      await doctor()
+      if (!await doctor()) process.exitCode = 1
       break
     case 'help':
     default:
@@ -472,6 +472,7 @@ async function seedDemo() {
 
 async function doctor() {
   const fix = hasFlag('--fix')
+  let passed = true
   console.log('ideOS doctor')
   console.log(`Workspace: ${root}`)
 
@@ -479,9 +480,14 @@ async function doctor() {
     const health = await cloudCall('/health')
     await cloudCall('/state')
     console.log(`Backend: cloud`)
-    console.log(`Health: ${health.ok ? 'ok' : 'failed'}`)
+    if (health.ok) {
+      console.log('Health: ok')
+    } else {
+      console.log('  [FAIL] Cloud health check failed.')
+      passed = false
+    }
     console.log('Authentication: ok')
-    return
+    return passed
   }
 
   console.log('Checking .gitignore...')
@@ -491,9 +497,17 @@ async function doctor() {
   if (missingGitignore.length > 0) {
     if (fix) {
       writeGitignore()
-      console.log('  [FIXED] Added missing items to .gitignore')
+      const updatedContent = fs.readFileSync(gitignorePath, 'utf8')
+      const remaining = ['.ideos/db.sqlite', '.ideos/db.sqlite-*', '.ideos/preferences.json', '.env'].filter(item => !updatedContent.split(/\r?\n/).includes(item))
+      if (remaining.length > 0) {
+        console.log(`  [FAIL] Could not add entries to .gitignore: ${remaining.join(', ')}`)
+        passed = false
+      } else {
+        console.log('  [FIXED] Added missing items to .gitignore')
+      }
     } else {
       console.log(`  [FAIL] Missing entries in .gitignore: ${missingGitignore.join(', ')}. Run with --fix to repair.`)
+      passed = false
     }
   } else {
     console.log('  [OK] .gitignore entries verified')
@@ -505,21 +519,22 @@ async function doctor() {
     console.log('  [SKIP] Git repository not initialized; initialize Git to enable post-commit snapshots.')
   } else {
     const postCommitPath = path.resolve(root, gitPath('rev-parse', '--git-path', 'hooks/post-commit') || path.join(gitHooksPath, 'post-commit'))
-    let hookOk = fs.existsSync(postCommitPath)
-    if (hookOk) {
-      const content = fs.readFileSync(postCommitPath, 'utf8')
-      if (!content.includes('# ideOS checkpoint')) {
-        hookOk = false
-      }
-    }
+    const hookExists = fs.existsSync(postCommitPath)
+    const hookOk = hookExists && fs.readFileSync(postCommitPath, 'utf8').includes('# ideOS checkpoint')
     if (!hookOk) {
       if (fix) {
-        hookOk = installGitHook()
-        console.log(hookOk
-          ? '  [FIXED] post-commit git hook installed'
-          : '  [FAIL] Could not install the post-commit git hook.')
+        const installed = installGitHook()
+        const verified = installed && fs.existsSync(postCommitPath) && fs.readFileSync(postCommitPath, 'utf8').includes('# ideOS checkpoint')
+        if (verified) {
+          console.log('  [FIXED] ideOS post-commit handler installed')
+        } else {
+          console.log('  [FAIL] Could not install the ideOS post-commit handler.')
+          passed = false
+        }
       } else {
-        console.log('  [FAIL] post-commit git hook is missing or stale. Run with --fix to repair.')
+        console.log(hookExists
+          ? '  [WARN] Existing post-commit hook does not contain the ideOS handler; this optional integration is not active. Run with --fix to add it.'
+          : '  [WARN] ideOS post-commit hook is not installed; this optional integration is inactive. Run with --fix to install it.')
       }
     } else {
       console.log('  [OK] post-commit git hook verified')
@@ -532,6 +547,7 @@ async function doctor() {
     const schemaOk = tables.includes('features') && tables.includes('checkpoints') && tables.includes('decisions')
     if (!schemaOk) {
       console.log('  [FAIL] Database schema is missing tables.')
+      passed = false
     } else {
       console.log('  [OK] Database schema verified')
     }
@@ -544,23 +560,31 @@ async function doctor() {
 
   console.log('Checking IDE configurations...')
   const inv = adapterInventory(root)
-  for (const item of inv) {
+  const detectedIdes = inv.filter(item => item.detected)
+  if (detectedIdes.length === 0) {
+    console.log('  [INFO] No supported IDE installations detected; IDE configuration checks skipped.')
+  }
+  for (const item of detectedIdes) {
     const adapter = adapters.find(a => a.id === item.id)
-    if (item.detected) {
-      if (!item.configured) {
-        if (fix) {
-          adapter.install(root, { backend: 'local' })
+    if (!item.configured) {
+      if (fix) {
+        adapter.install(root, { backend: 'local' })
+        if (adapter.verify(root)) {
           console.log(adapter.transport === 'manual'
             ? `  [FIXED] Regenerated setup snippet for ${adapter.name}; finish setup in the app.`
             : `  [FIXED] Re-installed configuration for ${adapter.name}`)
         } else {
-          console.log(`  [FAIL] ${adapter.name} configuration is not verified. Run with --fix to repair.`)
+          console.log(`  [FAIL] Could not verify ${adapter.name} configuration after repair.`)
+          passed = false
         }
       } else {
-        console.log(`  [OK] ${adapter.name} config is present (sign-in/live MCP connection not checked)`)
+        console.log(`  [WARN] ${adapter.name} is installed but its ideOS configuration is missing or unverified; this optional integration is inactive. Run with --fix to configure it.`)
       }
+    } else {
+      console.log(`  [OK] ${adapter.name} config is present (sign-in/live MCP connection not checked)`)
     }
   }
+  return passed
 }
 
 function listIdes() {

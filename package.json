@@ -21,6 +21,7 @@
     "build": "esbuild src/dashboard.jsx --loader:.jsx=jsx --format=esm --platform=node --outfile=src/dashboard.js",
     "prepack": "npm run build",
     "demo": "node ./src/cli.js init --yes && node ./src/cli.js seed-demo && node ./src/cli.js resume",
+    "test:doctor": "node ./scripts/doctor-test.js",
     "smoke": "node ./scripts/smoke-test.js",
     "test:watcher": "node ./scripts/watcher-test.js"
   },
