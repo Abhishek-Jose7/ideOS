@@ -9,9 +9,9 @@
 <br />
 
 [![npm version](https://img.shields.io/npm/v/ideos-cli.svg?style=for-the-badge&color=0969DA&label=npm)](https://www.npmjs.com/package/ideos-cli)
-[![npm downloads](https://img.shields.io/npm/dw/ideos-cli.svg?style=for-the-badge&color=2EA043&label=downloads)](https://www.npmjs.com/package/ideos-cli)
-[![Repo Visitors](https://komarev.com/ghpvc/?username=Abhishek-Jose7-ideOS&label=Visitors&color=8B5CF6&style=for-the-badge)](https://github.com/Abhishek-Jose7/ideOS)
-[![Git Clones](https://img.shields.io/badge/Git_Clones-125_%2858_unique%29-0969DA?style=for-the-badge&logo=git&logoColor=white)](https://github.com/Abhishek-Jose7/ideOS)
+[![npm total downloads](https://img.shields.io/npm/dt/ideos-cli.svg?style=for-the-badge&color=2EA043&label=total%20downloads)](https://www.npmjs.com/package/ideos-cli)
+[![Repo Views](https://img.shields.io/badge/Repo_Views-232-8B5CF6?style=for-the-badge)](https://github.com/Abhishek-Jose7/ideOS)
+[![Git Clones](https://img.shields.io/badge/Git_Clones-125-0969DA?style=for-the-badge&logo=git&logoColor=white)](https://github.com/Abhishek-Jose7/ideOS)
 [![Protocol](https://img.shields.io/badge/Protocol-MCP%20Standard-8B5CF6?style=for-the-badge&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-E3B341?style=for-the-badge)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-22C55E?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
@@ -347,9 +347,10 @@ Made with ☕ and open standards for developers who love switching editors.
 <br />
 
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![npm total downloads](https://img.shields.io/npm/dt/ideos-cli.svg?style=flat-square&color=2EA043&label=npm%20downloads)](https://www.npmjs.com/package/ideos-cli)
+[![Repo Views](https://img.shields.io/badge/Repo_Views-232-8B5CF6?style=flat-square)](https://github.com/Abhishek-Jose7/ideOS)
+[![Git Clones](https://img.shields.io/badge/Git_Clones-125-0969DA?style=flat-square&logo=git&logoColor=white)](https://github.com/Abhishek-Jose7/ideOS)
 [![GitHub stars](https://img.shields.io/github/stars/Abhishek-Jose7/ideOS?style=flat-square&color=gold)](https://github.com/Abhishek-Jose7/ideOS/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/Abhishek-Jose7/ideOS?style=flat-square&color=gray)](https://github.com/Abhishek-Jose7/ideOS/network/members)
-[![Total Visitors](https://komarev.com/ghpvc/?username=Abhishek-Jose7-ideOS&label=Repo%20Visitors&color=8B5CF6&style=flat-square)](https://github.com/Abhishek-Jose7/ideOS)
-[![Git Clones](https://img.shields.io/badge/Git_Clones-125_%2858_unique%29-0969DA?style=flat-square&logo=git&logoColor=white)](https://github.com/Abhishek-Jose7/ideOS)
 
 </div>

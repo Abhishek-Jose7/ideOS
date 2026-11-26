@@ -54,14 +54,14 @@ jobs:
             fs.writeFileSync(".github/traffic/clones.json", JSON.stringify({
               schemaVersion: 1,
               label: "Git Clones",
-              message: `${clones.count} (${clones.uniques} unique)`,
+              message: `${clones.count}`,
               color: "0969DA"
             }, null, 2));
 
             fs.writeFileSync(".github/traffic/views.json", JSON.stringify({
               schemaVersion: 1,
               label: "Repo Views",
-              message: `${views.count} (${views.uniques} unique)`,
+              message: `${views.count}`,
               color: "8B5CF6"
             }, null, 2));
 

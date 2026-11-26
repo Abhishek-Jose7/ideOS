@@ -336,6 +336,30 @@
       "next_steps": "[]",
       "source": "git_hook",
       "created_at": "2026-11-19T08:10:38.017Z"
+    },
+    {
+      "id": "f53f2901-ce71-4598-911c-ccb6d4dcd9cf",
+      "feature_id": "unclassified-work",
+      "worker_id": null,
+      "summary": "readme",
+      "progress": 0,
+      "files_touched": "[\".github/traffic/clones.json\",\".github/traffic/data.json\",\".github/traffic/views.json\",\".github/workflows/traffic.yml\",\".ideos/context.md\",\".ideos/exports/checkpoints.json\",\".ideos/exports/features.json\",\"README.md\"]",
+      "blockers": "[]",
+      "next_steps": "[]",
+      "source": "git_hook",
+      "created_at": "2026-11-26T12:52:53.929Z"
+    },
+    {
+      "id": "2b1e580d-9eb8-45cf-9270-51c6841abcf1",
+      "feature_id": "unclassified-work",
+      "worker_id": null,
+      "summary": "readme",
+      "progress": 0,
+      "files_touched": "[\".ideos/context.md\",\".ideos/exports/checkpoints.json\",\".ideos/exports/features.json\",\".github/traffic/clones.json\",\".github/traffic/data.json\",\".github/traffic/views.json\",\".github/workflows/traffic.yml\",\"README.md\"]",
+      "blockers": "[]",
+      "next_steps": "[]",
+      "source": "git_hook",
+      "created_at": "2026-11-26T12:52:55.492Z"
     }
   ]
 }
