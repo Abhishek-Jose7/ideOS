@@ -1,0 +1,97 @@
+name: Update Traffic Metrics
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily at midnight UTC
+  workflow_dispatch:      # Allows manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  sync-traffic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch and Record Traffic Metrics
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node -e '
+          const fs = require("fs");
+          const repo = process.env.GITHUB_REPOSITORY;
+          const token = process.env.GITHUB_TOKEN;
+
+          async function update() {
+            const headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": "application/vnd.github+json",
+              "User-Agent": "traffic-updater"
+            };
+
+            const [viewsRes, clonesRes] = await Promise.all([
+              fetch("https://api.github.com/repos/" + repo + "/traffic/views", { headers }),
+              fetch("https://api.github.com/repos/" + repo + "/traffic/clones", { headers })
+            ]);
+
+            if (!viewsRes.ok || !clonesRes.ok) {
+              console.error("Traffic API returned non-200", viewsRes.status, clonesRes.status);
+              return;
+            }
+
+            const views = await viewsRes.json();
+            const clones = await clonesRes.json();
+
+            fs.mkdirSync(".github/traffic", { recursive: true });
+
+            fs.writeFileSync(".github/traffic/clones.json", JSON.stringify({
+              schemaVersion: 1,
+              label: "Git Clones",
+              message: `${clones.count} (${clones.uniques} unique)`,
+              color: "0969DA"
+            }, null, 2));
+
+            fs.writeFileSync(".github/traffic/views.json", JSON.stringify({
+              schemaVersion: 1,
+              label: "Repo Views",
+              message: `${views.count} (${views.uniques} unique)`,
+              color: "8B5CF6"
+            }, null, 2));
+
+            fs.writeFileSync(".github/traffic/data.json", JSON.stringify({
+              last_updated: new Date().toISOString(),
+              summary: {
+                total_views_14d: views.count,
+                unique_visitors_14d: views.uniques,
+                total_clones_14d: clones.count,
+                unique_cloners_14d: clones.uniques
+              }
+            }, null, 2));
+
+            console.log("Updated traffic metrics: Clones =", clones.count, "Views =", views.count);
+          }
+
+          update().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          '
+
+      - name: Commit & push updated traffic metrics
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/traffic/
+          if git diff --staged --quiet; then
+            echo "No changes in traffic metrics."
+          else
+            git commit -m "chore(metrics): update github traffic views and clones [skip ci]"
+            git push
+          fi

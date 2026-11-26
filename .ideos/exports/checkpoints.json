@@ -312,6 +312,30 @@
       "next_steps": "[]",
       "source": "git_hook",
       "created_at": "2026-06-25T07:34:28.147Z"
+    },
+    {
+      "id": "eb43537f-1303-4582-a2a5-3c3dba9ff766",
+      "feature_id": "unclassified-work",
+      "worker_id": null,
+      "summary": "fix: make doctor failures return nonzero exit codes",
+      "progress": 0,
+      "files_touched": "[\".ideos/context.md\",\".ideos/exports/checkpoints.json\",\".ideos/exports/features.json\",\"ideos-cli-0.1.2.tgz\",\"ideos-cli-0.1.4.tgz\",\"package.json\",\"scripts/doctor-test.js\",\"scripts/smoke-test.js\",\"src/cli.js\"]",
+      "blockers": "[]",
+      "next_steps": "[]",
+      "source": "git_hook",
+      "created_at": "2026-11-19T08:10:35.704Z"
+    },
+    {
+      "id": "3022a2d1-a2a9-4b54-90b9-821a694a589a",
+      "feature_id": "unclassified-work",
+      "worker_id": null,
+      "summary": "fix: make doctor failures return nonzero exit codes",
+      "progress": 0,
+      "files_touched": "[\".ideos/context.md\",\".ideos/exports/checkpoints.json\",\".ideos/exports/features.json\",\"ideos-cli-0.1.2.tgz\",\"ideos-cli-0.1.4.tgz\",\"package.json\",\"scripts/doctor-test.js\",\"scripts/smoke-test.js\",\"src/cli.js\"]",
+      "blockers": "[]",
+      "next_steps": "[]",
+      "source": "git_hook",
+      "created_at": "2026-11-19T08:10:38.017Z"
     }
   ]
 }
